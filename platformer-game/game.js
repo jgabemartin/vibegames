@@ -7,7 +7,10 @@ const livesEl = document.getElementById("lives");
 const timerEl = document.getElementById("timer");
 const bestTimeEl = document.getElementById("best-time");
 const weatherEl = document.getElementById("weather");
+const musicStatusEl = document.getElementById("music-status");
 const messageEl = document.getElementById("message");
+
+musicStatusEl.textContent = Music.isMuted() ? "Off" : "On";
 
 const GRAVITY = 0.6;
 const MOVE_SPEED = 3.5;
@@ -25,7 +28,11 @@ const FARM_TYPES = ["homestead", "dairy", "crops", "orchard"];
 const keys = {};
 window.addEventListener("keydown", (e) => {
   keys[e.key] = true;
+  Music.start();
   if (e.key === "r" || e.key === "R") resetGame();
+  if (e.key === "m" || e.key === "M") {
+    musicStatusEl.textContent = Music.toggleMute() ? "Off" : "On";
+  }
 });
 window.addEventListener("keyup", (e) => {
   keys[e.key] = false;
