@@ -260,5 +260,9 @@ const Music = (() => {
     return started;
   }
 
-  return { start, toggleMute, isMuted, isStarted };
+  function getContext() {
+    return ctx;
+  }
+
+  return { start, toggleMute, isMuted, isStarted, getContext };
 })();

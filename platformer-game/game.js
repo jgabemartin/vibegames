@@ -7,6 +7,7 @@ const livesEl = document.getElementById("lives");
 const timerEl = document.getElementById("timer");
 const bestTimeEl = document.getElementById("best-time");
 const weatherEl = document.getElementById("weather");
+const levelEl = document.getElementById("level");
 const musicStatusEl = document.getElementById("music-status");
 const messageEl = document.getElementById("message");
 
@@ -21,7 +22,13 @@ const LEVEL_WIDTH = TILE_WIDTH * NUM_TILES;
 const LEVEL_HEIGHT = canvas.height;
 const GROUND_Y = LEVEL_HEIGHT - 40;
 
-const BEST_TIME_KEY = "farmBmxBestTimeMs";
+const BEST_TIME_KEY = "farmBmxBestRunMs";
+const LEVELS = [
+  { name: "Day", time: "day", dogSpeed: 1 },
+  { name: "Sunset", time: "sunset", dogSpeed: 1.15 },
+  { name: "Night", time: "night", dogSpeed: 1.3 },
+];
+const LEVEL_TRANSITION_MS = 2500;
 const WEATHER_SEQUENCE = ["clear", "cloudy", "rain", "snow", "fog"];
 const FARM_TYPES = ["homestead", "dairy", "crops", "orchard"];
 
@@ -101,7 +108,7 @@ const BASE_ENEMIES = [
 
 const BASE_FARMSTEADS = [90, 610, 1140, 1760];
 
-function makeLevel() {
+function makeLevel(config) {
   const platforms = [];
   const coins = [];
   const enemies = [];
@@ -125,7 +132,7 @@ function makeLevel() {
         x: e.x + offset,
         minX: e.minX + offset,
         maxX: e.maxX + offset,
-        vx: e.vx,
+        vx: e.vx * config.dogSpeed,
         alive: true,
         w: b.w,
         h: b.h,
@@ -141,12 +148,14 @@ function makeLevel() {
 
   const goal = { x: LEVEL_WIDTH - 80, y: GROUND_Y - 70, w: 30, h: 70 };
 
-  return { platforms, coins, enemies, goal, farmsteads };
+  return { platforms, coins, enemies, goal, farmsteads, time: config.time };
 }
 
 let level, player, camera, score, lives, state;
+let levelIndex = 0;
 let startTime = 0;
 let elapsedMs = 0;
+let timeBeforeLevel = 0;
 let bestTime = null;
 {
   const stored = localStorage.getItem(BEST_TIME_KEY);
@@ -154,7 +163,19 @@ let bestTime = null;
 }
 
 function resetGame() {
-  level = makeLevel();
+  lives = 3;
+  timeBeforeLevel = 0;
+  elapsedMs = 0;
+  livesEl.textContent = lives;
+  timerEl.textContent = formatTime(0);
+  bestTimeEl.textContent = formatTime(bestTime);
+  loadLevel(0);
+}
+
+function loadLevel(index) {
+  levelIndex = index;
+  const config = LEVELS[index];
+  level = makeLevel(config);
   player = {
     x: 40,
     y: GROUND_Y - 32,
@@ -168,16 +189,38 @@ function resetGame() {
   };
   camera = { x: 0 };
   score = 0;
-  lives = 3;
   state = "playing";
   startTime = performance.now();
-  elapsedMs = 0;
   totalCoinsEl.textContent = level.coins.length;
   coinsEl.textContent = score;
-  livesEl.textContent = lives;
-  timerEl.textContent = formatTime(0);
-  bestTimeEl.textContent = formatTime(bestTime);
+  levelEl.textContent = `${index + 1} — ${config.name}`;
   messageEl.textContent = "";
+}
+
+function completeLevel() {
+  timeBeforeLevel = elapsedMs;
+  if (levelIndex < LEVELS.length - 1) {
+    state = "levelComplete";
+    Sfx.levelUp();
+    const next = levelIndex + 1;
+    messageEl.textContent = `Level ${levelIndex + 1} complete! Get ready for Level ${next + 1} — ${LEVELS[next].name}`;
+    setTimeout(() => {
+      // Skip if the player restarted during the pause
+      if (state === "levelComplete" && levelIndex === next - 1) loadLevel(next);
+    }, LEVEL_TRANSITION_MS);
+    return;
+  }
+
+  state = "won";
+  Sfx.levelUp();
+  if (bestTime === null || elapsedMs < bestTime) {
+    bestTime = elapsedMs;
+    localStorage.setItem(BEST_TIME_KEY, String(bestTime));
+    bestTimeEl.textContent = formatTime(bestTime);
+    messageEl.textContent = `All 3 levels done — new best time: ${formatTime(elapsedMs)}! Press R to play again`;
+  } else {
+    messageEl.textContent = `All 3 levels done in ${formatTime(elapsedMs)}! Best: ${formatTime(bestTime)} — press R to play again`;
+  }
 }
 
 function respawnPlayer() {
@@ -201,7 +244,7 @@ function loseLife() {
 function update() {
   if (state !== "playing") return;
 
-  elapsedMs = performance.now() - startTime;
+  elapsedMs = timeBeforeLevel + (performance.now() - startTime);
   timerEl.textContent = formatTime(elapsedMs);
 
   if (keys["ArrowLeft"] || keys["a"] || keys["A"]) {
@@ -217,12 +260,14 @@ function update() {
   if ((keys[" "] || keys["ArrowUp"] || keys["w"] || keys["W"]) && player.onGround) {
     player.vy = JUMP_FORCE;
     player.onGround = false;
+    Sfx.jump();
   }
 
   player.vy += GRAVITY;
   player.x += player.vx;
   player.y += player.vy;
   player.onGround = false;
+  let blockedSideways = false;
 
   if (player.x < 0) player.x = 0;
   if (player.x + player.w > LEVEL_WIDTH) player.x = LEVEL_WIDTH - player.w;
@@ -239,13 +284,20 @@ function update() {
         player.vy = 0;
       } else if (player.vx > 0) {
         player.x = p.x - player.w;
+        blockedSideways = true;
       } else if (player.vx < 0) {
         player.x = p.x + p.w;
+        blockedSideways = true;
       }
     }
   }
 
+  // Only thud on first contact, not every frame while pushing against it
+  if (blockedSideways && !player.wasBlocked) Sfx.bump();
+  player.wasBlocked = blockedSideways;
+
   if (player.y > LEVEL_HEIGHT) {
+    Sfx.fall();
     loseLife();
   }
 
@@ -257,6 +309,7 @@ function update() {
         coin.collected = true;
         score += 1;
         coinsEl.textContent = score;
+        Sfx.coin();
       }
     }
   }
@@ -272,22 +325,16 @@ function update() {
       if (stomping) {
         enemy.alive = false;
         player.vy = JUMP_FORCE * 0.6;
+        Sfx.stomp();
       } else {
+        Sfx.hurt();
         loseLife();
       }
     }
   }
 
-  if (rectsOverlap(player, level.goal)) {
-    state = "won";
-    if (bestTime === null || elapsedMs < bestTime) {
-      bestTime = elapsedMs;
-      localStorage.setItem(BEST_TIME_KEY, String(bestTime));
-      bestTimeEl.textContent = formatTime(bestTime);
-      messageEl.textContent = `New best time: ${formatTime(elapsedMs)}! Press R to play again`;
-    } else {
-      messageEl.textContent = `You win in ${formatTime(elapsedMs)}! Best: ${formatTime(bestTime)} — press R to play again`;
-    }
+  if (state === "playing" && rectsOverlap(player, level.goal)) {
+    completeLevel();
   }
 
   camera.x = Math.max(0, Math.min(player.x - canvas.width / 2, LEVEL_WIDTH - canvas.width));
@@ -295,18 +342,105 @@ function update() {
   player.wheelPhase += player.vx * 0.25;
 }
 
-function drawSky() {
-  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height);
-  grad.addColorStop(0, "#8ec9f0");
-  grad.addColorStop(0.75, "#cfe9ff");
-  grad.addColorStop(1, "#e9f6e2");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+const SKY_GRADIENTS = {
+  day: [[0, "#8ec9f0"], [0.75, "#cfe9ff"], [1, "#e9f6e2"]],
+  sunset: [[0, "#3b2a63"], [0.4, "#b4507a"], [0.7, "#f28c4b"], [1, "#ffd27f"]],
+  night: [[0, "#050a1c"], [0.7, "#13224d"], [1, "#2a3a66"]],
+};
 
-  ctx.fillStyle = "rgba(255, 244, 191, 0.9)";
+// Tint applied over the scenery so farms and hills match the sky
+const SCENE_TINTS = {
+  day: null,
+  sunset: "rgba(200, 80, 60, 0.22)",
+  night: "rgba(6, 12, 40, 0.58)",
+};
+
+const STARS = Array.from({ length: 90 }, () => ({
+  x: Math.random() * canvas.width,
+  y: Math.random() * canvas.height * 0.6,
+  r: 0.5 + Math.random() * 1.2,
+  phase: Math.random() * Math.PI * 2,
+}));
+
+const skyCanvas = document.createElement("canvas");
+skyCanvas.width = canvas.width;
+skyCanvas.height = canvas.height;
+const skyCtx = skyCanvas.getContext("2d");
+
+function drawSky() {
+  const grad = skyCtx.createLinearGradient(0, 0, 0, canvas.height);
+  for (const [stop, color] of SKY_GRADIENTS[level.time]) grad.addColorStop(stop, color);
+  skyCtx.fillStyle = grad;
+  skyCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (level.time === "day") {
+    skyCtx.fillStyle = "rgba(255, 244, 191, 0.9)";
+    skyCtx.beginPath();
+    skyCtx.arc(680, 70, 32, 0, Math.PI * 2);
+    skyCtx.fill();
+  } else if (level.time === "sunset") {
+    // Big low sun sinking behind the hills
+    const glow = skyCtx.createRadialGradient(560, 330, 20, 560, 330, 200);
+    glow.addColorStop(0, "rgba(255, 220, 140, 0.8)");
+    glow.addColorStop(1, "rgba(255, 140, 80, 0)");
+    skyCtx.fillStyle = glow;
+    skyCtx.fillRect(0, 0, canvas.width, canvas.height);
+    skyCtx.fillStyle = "#ffcf6e";
+    skyCtx.beginPath();
+    skyCtx.arc(560, 330, 55, 0, Math.PI * 2);
+    skyCtx.fill();
+  } else if (level.time === "night") {
+    const t = performance.now() / 600;
+    skyCtx.fillStyle = "#ffffff";
+    for (const s of STARS) {
+      skyCtx.globalAlpha = 0.5 + 0.5 * Math.sin(t + s.phase);
+      skyCtx.beginPath();
+      skyCtx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      skyCtx.fill();
+    }
+    skyCtx.globalAlpha = 1;
+    skyCtx.fillStyle = "#f2efdc";
+    skyCtx.beginPath();
+    skyCtx.arc(680, 70, 26, 0, Math.PI * 2);
+    skyCtx.fill();
+    skyCtx.fillStyle = "rgba(180, 175, 155, 0.5)";
+    skyCtx.beginPath();
+    skyCtx.arc(672, 62, 5, 0, Math.PI * 2);
+    skyCtx.arc(690, 78, 4, 0, Math.PI * 2);
+    skyCtx.arc(684, 58, 2.5, 0, Math.PI * 2);
+    skyCtx.fill();
+  }
+}
+
+function drawHeadlight(p) {
+  const cx = p.x + p.w / 2;
+  const lampX = cx + p.facing * 16;
+  const lampY = p.y + p.h - 34;
+  const reach = 220;
+  const beam = ctx.createRadialGradient(lampX, lampY, 4, lampX, lampY, reach);
+  beam.addColorStop(0, "rgba(255, 240, 180, 0.45)");
+  beam.addColorStop(1, "rgba(255, 240, 180, 0)");
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = beam;
   ctx.beginPath();
-  ctx.arc(680, 70, 32, 0, Math.PI * 2);
+  ctx.moveTo(lampX, lampY);
+  ctx.lineTo(lampX + p.facing * reach, lampY - 50);
+  ctx.lineTo(lampX + p.facing * reach, lampY + 70);
+  ctx.closePath();
   ctx.fill();
+  ctx.restore();
+}
+
+function drawCoins(viewStart, viewEnd) {
+  ctx.fillStyle = "#ffd166";
+  for (const coin of level.coins) {
+    if (coin.collected) continue;
+    if (coin.x < viewStart || coin.x > viewEnd) continue;
+    ctx.beginPath();
+    ctx.arc(coin.x, coin.y, coin.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawClouds() {
@@ -644,7 +778,6 @@ function updateAndDrawGeese() {
 }
 
 function drawBackground() {
-  drawSky();
   drawHillLayer(0.2, GROUND_Y - 40, 22, "#a9cf7f");
   drawHillLayer(0.4, GROUND_Y - 10, 18, "#86bb5e");
   drawClouds();
@@ -1133,15 +1266,6 @@ function draw() {
     drawPlatform(p);
   }
 
-  ctx.fillStyle = "#ffd166";
-  for (const coin of level.coins) {
-    if (coin.collected) continue;
-    if (coin.x < viewStart || coin.x > viewEnd) continue;
-    ctx.beginPath();
-    ctx.arc(coin.x, coin.y, coin.r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   for (const enemy of level.enemies) {
     if (!enemy.alive) continue;
     if (enemy.x + enemy.w < viewStart || enemy.x > viewEnd) continue;
@@ -1156,6 +1280,29 @@ function draw() {
 
   drawPlayer(player);
 
+  ctx.restore();
+
+  // Scenery was drawn onto a transparent canvas: tint only those pixels,
+  // then slide the sky in behind them.
+  const tint = SCENE_TINTS[level.time];
+  if (tint) {
+    ctx.save();
+    ctx.globalCompositeOperation = "source-atop";
+    ctx.fillStyle = tint;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.restore();
+  }
+  drawSky();
+  ctx.save();
+  ctx.globalCompositeOperation = "destination-over";
+  ctx.drawImage(skyCanvas, 0, 0);
+  ctx.restore();
+
+  // Coins and the headlight go on top of the tint so they stay bright
+  ctx.save();
+  ctx.translate(-camera.x, 0);
+  drawCoins(viewStart, viewEnd);
+  if (level.time === "night") drawHeadlight(player);
   ctx.restore();
 
   drawWeatherEffects();
