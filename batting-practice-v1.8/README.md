@@ -1,4 +1,4 @@
-# Batting Practice
+# Batting Practice v1.8
 
 A top-down baseball hitting game. Step into the box, time your swing, and try to put the ball where the fielders aren't. Each round is 20 pitches. You score points by placing hits in the shaded zones on the field.
 
@@ -147,6 +147,8 @@ As in real batting practice, the ball comes back in after every pitch:
 ### 1.8: Pitch mix varies by round
 
 - Each round now picks its own share of middle-height strikes, anywhere from 50% to 75%. The rest are split evenly between high and low.
+- The hit stats label the angle as "exit angle".
+- The build number appears in the game: in the browser tab, the page heading, the title screen and the bottom-left corner of the field. The folder and the script and style files now carry the version in their names (`batting-practice-v1.8`, `game-v1.8.js`, `sfx-v1.8.js`, `style-v1.8.css`).
 
 ### 1.7: Hit stats, batting average and counting only real swings
 
@@ -214,5 +216,8 @@ As in real batting practice, the ball comes back in after every pitch:
 ## Files
 
 - `index.html`: page layout and the HUD under the field
-- `game.js`: game flow, ball physics, fielders, scoring, camera and drawing
-- `sfx.js`: sound effects made with the Web Audio API (no audio files)
+- `game-v1.8.js`: game flow, ball physics, fielders, scoring, camera and drawing
+- `sfx-v1.8.js`: sound effects made with the Web Audio API (no audio files)
+- `style-v1.8.css`: page styling
+
+The folder and these file names include the version number. For a new version, rename them and update `VERSION` at the top of the game file, the `<title>`, heading and script/style links in `index.html`, and the link in the main README.

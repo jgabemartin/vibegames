@@ -3,6 +3,7 @@
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
+  const VERSION = "1.8"; // keep in step with the folder and file names and the README change log
 
   // ---- World constants (units: feet, seconds) ----
   // Home plate is the origin, +y points to center field, +x toward first base.
@@ -1900,6 +1901,10 @@
     ctx.fillStyle = "#fff";
     ctx.font = "bold 54px Segoe UI, Arial";
     ctx.fillText("BATTING PRACTICE", W / 2, H / 2 - 60);
+    ctx.font = "bold 16px Segoe UI, Arial";
+    ctx.fillStyle = "#9fe3ff";
+    ctx.fillText(`v${VERSION}`, W / 2, H / 2 - 26);
+    ctx.fillStyle = "#fff";
     ctx.font = "20px Segoe UI, Arial";
     ctx.fillText("Press Space to step into the box", W / 2, H / 2);
     ctx.font = "15px Segoe UI, Arial";
@@ -1928,9 +1933,19 @@
     drawScoreboard();
     drawParticles();
     drawBanner();
+    drawVersion();
     if (mode === "title") drawTitle();
     if (mode === "roundover") drawRoundOver();
     if (paused) drawPaused();
+  }
+
+  // Game name and build number in the bottom-left corner while playing
+  function drawVersion() {
+    ctx.textAlign = "left";
+    ctx.textBaseline = "bottom";
+    ctx.font = "12px Segoe UI, Arial";
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.fillText(`Batting Practice v${VERSION}`, 12, H - 10);
   }
 
   function drawPaused() {
