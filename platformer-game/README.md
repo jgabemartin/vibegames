@@ -1,6 +1,6 @@
-# Western NY Farm BMX Dash
+# SkidRoller
 
-A simple browser platformer: ride a BMX bike across Western New York farmland, hopping dogs, pumpkins, hay bales, and a wagon, through five weather zones, chasing your best completion time.
+A browser BMX platformer: ride across Western New York farmland, hopping dogs, pumpkins, hay bales, and a wagon through five weather zones. Beat a boss at the end of each of three levels, and chase your best completion time.
 
 ## Download and play
 

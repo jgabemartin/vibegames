@@ -3,7 +3,7 @@ repo for vibe-coded games
 
 ## Games
 
-- [platformer-game](platformer-game/): **Western NY Farm BMX Dash**, a browser platformer with three levels (Day, Sunset and Night), five weather zones, music and sound effects. See [its README](platformer-game/README.md) for controls and details.
+- [platformer-game](platformer-game/): **SkidRoller**, a browser BMX platformer with three levels (Day, Sunset and Night), each ending in a boss fight, plus five weather zones, SuperHop double jumps, music and sound effects. See [its README](platformer-game/README.md) for controls and details.
 
 ## How to play
 
