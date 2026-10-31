@@ -18,9 +18,25 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 
 ### Rounds
 
-- A round is **20 pitches**. Every pitch uses one up, whether you hit it, miss it, foul it off or let it go by.
-- Your score is the total points from all 20 pitches. Nothing takes points away, so a strike or an out just means that pitch scored nothing.
-- When the 20th pitch is done, a summary shows your score, a breakdown by zone, your longest hit and your earlier rounds. Press Space to start the next round.
+- A round is **20 pitches**. Only pitches you swing at and don't foul off use one up: fair balls (hits and outs) and swinging strikes.
+- **Taken pitches** (balls and called strikes) and **foul balls** don't count, so you get another pitch. The scoreboard shows how many pitches you have left.
+- Your score is the total points from your 20 pitches. Nothing takes points away, so a strike or an out just means that pitch scored nothing.
+- When the 20th pitch is done, a summary shows:
+  - your score
+  - your batting average
+  - a breakdown by zone
+  - your longest hit
+  - your earlier rounds
+
+  Press Space to start the next round.
+
+### Batting average and hit stats
+
+- **Batting average** = hits ÷ fair balls put in play (hits plus outs). Fouls, misses and taken pitches don't count. It shows on the scoreboard during the round and on the summary at the end.
+- After every batted ball, the banner and the HUD show:
+  - the **exit velocity**, how hard the ball came off the bat in mph
+  - the **launch angle** in degrees
+  - the **hang time**, the seconds until the ball first came down. Hang time is left off for ground balls.
 - Your best round is saved in the browser and kept between visits.
 - Pressing **R** restarts the current round from pitch 1. The round you abandoned isn't recorded.
 
@@ -29,7 +45,7 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 - Each pitch is random:
   - **Speed:** slow (about 70 mph), medium (about 82 mph) or fast (about 95 mph).
   - **Location:** one of nine spots, inside/middle/outside × high/middle/low, with a little variation.
-  - **Height is balanced:** high, middle and low strikes come up equally often over a round, about six of each. Separately, about one pitch in eight misses above or below the zone for a ball.
+  - **Mostly middle height:** 75% of strikes are middle height, 12.5% high and 12.5% low, which gives you more hittable pitches. Every stretch of eight strikes has exactly six middle, one high and one low. Separately, about one pitch in eight misses above or below the zone for a ball.
 - The HUD under the field names the pitch once it's thrown, for example "Fast · High-Inside · 94 mph".
 - You get **one swing per pitch**.
 - If you don't swing, a pitch in the strike zone is a **called strike** and one outside it is a **ball**. Neither scores points.
@@ -94,14 +110,14 @@ Seven imaginary fielders play defense:
 - **Infield:** 3B, SS, 2B and 1B.
 - **Outfield:** LF, CF and RF.
 
-The shaded circles with dashed edges show each fielder's range. The infield circles are always shown. The three outfield circles only appear once the ball is hit. They then grow or shrink to that ball's exact range: a ball in the air that lands inside one is caught, and one that lands outside all of them is a hit. There's no pitcher or catcher fielding. All outs score **0 points**:
+Each fielder covers an unseen circle of range around his spot, about 22 ft for infielders and 75 ft for outfielders. A ball in the air that lands inside an outfielder's range is caught, and one that lands outside all of them is a hit. There's no pitcher or catcher fielding. All outs score **0 points**:
 
 - **Ground out:** a ground ball hit toward an infielder. He moves over to the ball's path and the ball stops in his glove.
 - **Infield out:** a ground ball that stops before it gets past the infielders.
 - **Fly out, line out or pop out:** a fielder catches the ball in the air.
-  - **Outfielders** catch any ball that would land inside their circle.
-  - **Hard, low line drives shrink that circle.** The harder the ball is hit (above about 85 mph) and the flatter it's hit (below about 30°), the less time the outfielders have to react. A 110 mph liner cuts their range to just over half. The circles shrink and turn gold as the ball leaves the bat.
-  - **High flies that hang in the air grow that circle.** A ball that stays up longer than about 4.5 seconds gives the outfielders time to run farther, up to 40% more range at 6.5 seconds or more. The circles expand and turn sky blue as the ball leaves the bat.
+  - **Outfielders** catch any ball that would land inside their range.
+  - **Hard, low line drives shrink that circle.** The harder the ball is hit (above about 85 mph) and the flatter it's hit (below about 30°), the less time the outfielders have to react. A 110 mph liner cuts their range to just over half.
+  - **High flies that hang in the air grow it.** A ball that stays up longer than about 4.5 seconds gives the outfielders time to run farther, up to 40% more range at 6.5 seconds or more.
   - **Infielders** catch short balls in the air (landing within about 150 ft) if they can run there in time. Each reacts in about half a second, then runs about 18–20 ft/s, so the longer a pop-up hangs, the more ground they cover.
 - **Easy out:** a short ball in the air that comes down within about 75 ft of home.
 
@@ -120,12 +136,21 @@ As in real batting practice, the ball comes back in after every pitch:
 
 ### Tips
 
-- Hard line drives shrink the outfielders' circles and open up the purple gaps for +5.
-- Aim for the open grass between, in front of, or behind the outfielders' circles. High fly balls are usually caught. Line drives and well-placed grounders are more reliable ways to score.
+- Hard line drives shrink the outfielders' range and open up the purple gaps for +5.
+- Lay off pitches you don't like. Taken pitches and fouls don't use up any of your 20.
+- Aim for the open grass between, in front of, or behind the outfielders. High fly balls are usually caught. Line drives and well-placed grounders are more reliable ways to score.
 - Hitting the ball straight up the middle sends it toward CF. Swing a little early or late to aim for the gaps and the lines.
 - Middle-high pitches hit squarely are your best chance at the wall or a home run.
 
 ## Change log
+
+### 1.7: Hit stats, batting average and counting only real swings
+
+- Every batted ball shows its exit velocity, launch angle and hang time in the banner and the HUD.
+- Batting average (hits ÷ balls in play) appears on the scoreboard, the HUD and the end-of-round summary.
+- Only fair balls and swinging strikes use up one of the 20 pitches. Taken pitches and fouls are free, and the scoreboard now shows pitches left.
+- Strikes now come in at 75% middle height, 12.5% high and 12.5% low, so there are more pitches to drive for hits.
+- Fielder range circles are no longer drawn. The range logic is unchanged, including the shrink on hard liners and the growth on high flies.
 
 ### 1.6: Throwing the ball back and more range on high flies
 

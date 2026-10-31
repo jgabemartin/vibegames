@@ -72,6 +72,7 @@
     wall: { label: "OFF THE WALL", name: "Off the wall", pts: 6, shade: "rgba(255,140,80,0.45)", color: "#ff9a5e" },
     hr: { label: "HOME RUN!", name: "Home run", pts: 10, shade: "rgba(255,90,90,0.20)", color: "#ff6b6b" },
   };
+  const LEGEND = ["gap", "outfield", "ofgap", "line", "wall", "hr"]; // scoring zones, in key order
   const BEST_KEY = "battingPractice.bestRound";
 
   const hud = {
@@ -85,6 +86,7 @@
     history: document.getElementById("history"),
     sound: document.getElementById("sound"),
     hand: document.getElementById("hand"),
+    avg: document.getElementById("avg"),
   };
 
   // ---- Batter handedness ----
@@ -412,13 +414,13 @@
   let lastTiming = null;
   let paused = false;
 
-  // Pitch heights come from a shuffled bag (two low, two middle, two high), so the three
-  // rows of the strike zone even out over a round instead of streaking
+  // Pitch heights come from a shuffled bag of eight: six middle, one high, one low
+  // (75% / 12.5% / 12.5%), so every stretch of eight strikes has exactly that mix
   const BALL_CHANCE = 0.12; // share of pitches thrown above or below the zone
   let rowBag = [];
   function nextRow() {
     if (!rowBag.length) {
-      rowBag = [-1, -1, 0, 0, 1, 1];
+      rowBag = [-1, 0, 0, 0, 0, 0, 0, 1];
       for (let i = rowBag.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [rowBag[i], rowBag[j]] = [rowBag[j], rowBag[i]];
@@ -570,8 +572,6 @@
     const pos = pitchPos(pitch, 0);
     ball = { ...pos, vx: 0, vy: 0, vz: 0, phase: "pitch" };
     hud.pitch.textContent = pitch.label;
-    round.pitch++;
-    updateHud();
     setMode("pitch");
   }
 
@@ -751,6 +751,7 @@
       if (!play.firstLand && !play.decided) {
         play.wallFirst = true;
         play.firstLand = { x: ball.x, y: ball.y, dist: wd };
+        play.hang = play.airT;
       }
       if (!play.decided) decide("fair");
     }
@@ -767,6 +768,7 @@
       ball.z = 0; // drawn tucked in at the fielder
       ball.phase = "stopped";
       play.decided = "out";
+      play.hang = play.airT;
       Sfx.stopFlight();
       Sfx.catcherMitt();
       return;
@@ -801,7 +803,10 @@
         ball.z = 0;
         const impact = -ball.vz;
         const dist = Math.hypot(ball.x, ball.y);
-        if (!play.firstLand) play.firstLand = { x: ball.x, y: ball.y, dist };
+        if (!play.firstLand) {
+          play.firstLand = { x: ball.x, y: ball.y, dist };
+          play.hang = play.airT;
+        }
 
         if (!inField(ball.x, ball.y)) {
           // Landed in the stands
@@ -921,7 +926,7 @@
       if (banner) banner.sub = `+${pts} · ${dist} ft`;
       resultDur = 3.5;
     } else if (play.decided === "foul") {
-      if (banner) banner.sub = ptsText;
+      if (banner) banner.sub = `${ptsText} · doesn't use a pitch`;
       resultDur = 1.6;
     } else {
       const grounder = play.launch < 10;
@@ -930,16 +935,21 @@
       showBanner(res.label, `${ptsText} · ${hitDescription(dist)}, ${dist} ft`, color);
       resultDur = 2.4;
     }
+    // Exit velocity, launch angle and hang time (ground balls have no real hang time)
+    const stats = `${Math.round(play.ev)} mph · ${Math.round(play.launch)}°` +
+      (play.launch >= 10 && play.hang ? ` · ${play.hang.toFixed(1)} s hang` : "");
+    if (banner) banner.stats = stats;
 
     if (res.zone) round.counts[res.zone]++;
     else if (play.decided === "foul") round.counts.foul++;
     else if (play.decided === "out") round.counts.flyout++;
     else round.counts.out++;
     if (dist && play.decided !== "foul") round.longest = Math.max(round.longest, dist);
+    if (play.decided !== "foul") round.pitch++; // fouls don't use up a pitch
 
     const label = (res.label.charAt(0) + res.label.slice(1).toLowerCase().replace("!", ""))
       .replace(/\b(lf|cf|rf|ss|1b|2b|3b)\b/g, (m) => m.toUpperCase());
-    hud.result.textContent = `${label}${dist ? `, ${dist} ft` : ""} (${pts > 0 ? `+${pts}` : "0"})`;
+    hud.result.textContent = `${label}${dist ? `, ${dist} ft` : ""} (${pts > 0 ? `+${pts}` : "0"}) · ${stats}`;
     addScore(pts);
     setMode("result");
   }
@@ -949,19 +959,20 @@
     ball = null;
     if (pitch.swung) {
       round.counts.strike++;
+      round.pitch++; // only swings use up a pitch; taken pitches don't
       showBanner("STRIKE!", "Swing and a miss", "#ff6b6b");
       hud.result.textContent = "Swinging strike";
       lastZone = { h: pitch.h, v: pitch.v, color: "#ff6b6b" };
     } else if (inZone(pitch)) {
       round.counts.strike++;
-      showBanner("STRIKE!", "Caught looking", "#ff6b6b");
+      showBanner("STRIKE!", "Caught looking · doesn't use a pitch", "#ff6b6b");
       hud.result.textContent = "Called strike";
       hud.timing.textContent = "No swing";
       lastTiming = null;
       lastZone = { h: pitch.h, v: pitch.v, color: "#ff6b6b" };
     } else {
       round.counts.ball++;
-      showBanner("BALL", "Good eye", "#8fd3ff");
+      showBanner("BALL", "Good eye · doesn't use a pitch", "#8fd3ff");
       hud.result.textContent = "Ball";
       hud.timing.textContent = "No swing";
       lastTiming = null;
@@ -972,9 +983,19 @@
     setMode("result");
   }
 
+  // Batting average: hits divided by fair balls put in play (hits + outs). Fouls, misses and takes don't count.
+  function battingAvg() {
+    const c = round.counts;
+    const hits = LEGEND.reduce((n, k) => n + (c[k] || 0), 0);
+    const ab = hits + (c.flyout || 0) + (c.out || 0);
+    const avg = ab ? hits / ab : 0;
+    return { hits, ab, text: avg >= 1 ? "1.000" : avg.toFixed(3).slice(1) };
+  }
+
   function updateHud() {
     hud.round.textContent = round.num || "-";
     hud.count.textContent = `${round.pitch} / ${PITCHES_PER_ROUND}`;
+    if (hud.avg) hud.avg.textContent = battingAvg().text;
     hud.score.textContent = round.score;
     hud.best.textContent = best;
     hud.history.textContent = history.length ? history.join(", ") : "--";
@@ -1267,34 +1288,7 @@
     ctx.arc(0, 0, OUTFIELD_R, Math.PI / 2 - rad(LINE_DEG), Math.PI / 2 + rad(LINE_DEG));
     ctx.stroke();
 
-    // Infielders' rough range is always shown
-    for (const f of INFIELDERS) {
-      const p = fielderHome(f);
-      ctx.fillStyle = "rgba(0,0,0,0.08)";
-      circle(p.x, p.y, f.ring);
-      ctx.fill();
-      ctx.strokeStyle = "rgba(255,255,255,0.3)";
-      ctx.stroke();
-    }
-
-    // Outfielders' circles only appear once the ball is hit. They then grow (high fly, sky blue)
-    // or shrink (hard liner, gold) to this ball's exact range: land inside one and it's caught.
-    if (play && (mode === "inplay" || mode === "result")) {
-      const grow = Math.min(1, play.airT / 0.4);
-      const k = lerp(1, play.rangeK, 1 - (1 - grow) * (1 - grow));
-      const changed = Math.abs(play.rangeK - 1) > 0.03;
-      const edge = !changed ? "rgba(255,255,255,0.45)" : play.rangeK < 1 ? "rgba(255,210,120,0.85)" : "rgba(140,210,255,0.9)";
-      const fill = !changed ? "rgba(0,0,0,0.16)" : play.rangeK < 1 ? "rgba(255,190,90,0.14)" : "rgba(120,190,255,0.16)";
-      ctx.lineWidth = 2 * px;
-      for (const f of OUTFIELDERS) {
-        const p = fielderHome(f);
-        circle(p.x, p.y, f.ring * k);
-        ctx.fillStyle = fill;
-        ctx.fill();
-        ctx.strokeStyle = edge;
-        ctx.stroke();
-      }
-    }
+    // Fielder ranges (f.ring, scaled by play.rangeK for outfielders) decide catches but aren't drawn
     ctx.setLineDash([]);
   }
 
@@ -1759,6 +1753,15 @@
       ctx.fillStyle = "#fff";
       ctx.fillText(banner.sub, 0, banner.big ? 44 : 36);
     }
+    // Exit velocity, launch angle and hang time
+    if (banner.stats) {
+      const y = banner.big ? 68 : 60;
+      ctx.font = "bold 15px Segoe UI, Arial";
+      ctx.lineWidth = 4;
+      ctx.strokeText(banner.stats, 0, y);
+      ctx.fillStyle = "#9fe3ff";
+      ctx.fillText(banner.stats, 0, y);
+    }
     ctx.restore();
   }
 
@@ -1771,8 +1774,6 @@
     ctx.globalAlpha = 1;
   }
 
-  const LEGEND = ["gap", "outfield", "ofgap", "line", "wall", "hr"];
-
   // Round, score, pitches, and a color key for the scoring zones
   function drawScoreboard() {
     const x0 = 16, y0 = 16, w = 172, h = 86 + LEGEND.length * 18;
@@ -1784,7 +1785,7 @@
     ctx.font = "11px Segoe UI, Arial";
     ctx.fillText(`ROUND ${round.num || "-"}`, x0 + 10, y0 + 8);
     ctx.textAlign = "right";
-    ctx.fillText(`PITCH ${round.pitch} / ${PITCHES_PER_ROUND}`, x0 + w - 10, y0 + 8);
+    ctx.fillText(`${PITCHES_PER_ROUND - round.pitch} PITCHES LEFT`, x0 + w - 10, y0 + 8);
     ctx.textAlign = "left";
     ctx.fillStyle = "#fff";
     ctx.font = "bold 30px Segoe UI, Arial";
@@ -1792,7 +1793,8 @@
     ctx.fillStyle = "#aaa";
     ctx.font = "11px Segoe UI, Arial";
     ctx.textAlign = "right";
-    ctx.fillText(`BEST ${best}`, x0 + w - 10, y0 + 38);
+    ctx.fillText(`BEST ${best}`, x0 + w - 10, y0 + 30);
+    ctx.fillText(`AVG ${battingAvg().text}`, x0 + w - 10, y0 + 46);
 
     // Floating "+N" right after scoring
     if (scorePop && scorePop.t < 1.4) {
@@ -1839,7 +1841,11 @@
     ctx.fillText(round.score, W / 2, 190);
     ctx.font = "16px Segoe UI, Arial";
     ctx.fillStyle = "#ccc";
-    ctx.fillText(round.newBest ? "NEW BEST ROUND!" : `Best round: ${best}`, W / 2, 242);
+    ctx.fillText(round.newBest ? "NEW BEST ROUND!" : `Best round: ${best}`, W / 2, 238);
+    const ba = battingAvg();
+    ctx.fillStyle = "#9fe3ff";
+    ctx.font = "bold 17px Segoe UI, Arial";
+    ctx.fillText(`Batting average ${ba.text}  (${ba.hits} hits in ${ba.ab} balls in play)`, W / 2, 262);
 
     // Breakdown by zone
     const rows = LEGEND.slice().reverse().map((k) => ({
