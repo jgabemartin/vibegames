@@ -56,6 +56,14 @@ const Sfx = (() => {
     tone("square", 260, 620, 0.14, 0.18);
   }
 
+  // Higher double chirp with a whoosh for the mid-air SuperHop
+  function superHop() {
+    if (!ready()) return;
+    tone("square", 420, 900, 0.1, 0.16);
+    tone("square", 700, 1400, 0.12, 0.12, 0.06);
+    noise("highpass", 3000, 0.15, 0.15);
+  }
+
   // Two-note bright ding
   function coin() {
     if (!ready()) return;
@@ -92,6 +100,81 @@ const Sfx = (() => {
     noise("lowpass", 300, 0.2, 0.4, 0.75);
   }
 
+  // Deep growl when a boss wakes up
+  function bossRoar() {
+    if (!ready()) return;
+    tone("sawtooth", 70, 50, 0.9, 0.35);
+    tone("sawtooth", 105, 60, 0.9, 0.2);
+    noise("lowpass", 400, 0.9, 0.35);
+  }
+
+  // Soft thump of an apple hitting the ground
+  function applePlop() {
+    if (!ready()) return;
+    tone("sine", 220, 90, 0.08, 0.2);
+  }
+
+  // Sinking groan when you get past a boss
+  function bossDefeat() {
+    if (!ready()) return;
+    tone("sawtooth", 160, 55, 1.0, 0.25);
+    [784, 988, 1175].forEach((f, i) => tone("square", f, f, 0.15, 0.1, 0.5 + i * 0.12));
+  }
+
+  // Rushing flare of fire
+  function fireWhoosh() {
+    if (!ready()) return;
+    const time = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.setValueAtTime(300, time);
+    filter.frequency.exponentialRampToValueAtTime(1800, time + 0.45);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, time);
+    gain.gain.exponentialRampToValueAtTime(0.5, time + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.001, time + 0.5);
+    src.connect(filter).connect(gain).connect(sfxGain);
+    src.start(time);
+    src.stop(time + 0.5);
+  }
+
+  // Two raspy coughs
+  function cough() {
+    if (!ready()) return;
+    noise("bandpass", 900, 0.14, 0.6);
+    tone("sawtooth", 180, 120, 0.12, 0.15);
+    noise("bandpass", 750, 0.16, 0.5, 0.22);
+    tone("sawtooth", 160, 100, 0.14, 0.13, 0.22);
+  }
+
+  // Rival rider dropping into the pit
+  function rivalFall() {
+    if (!ready()) return;
+    tone("sine", 700, 200, 0.5, 0.12);
+  }
+
+  // Big boom, firework pops, and cascading chimes for beating the final boss
+  function celebration() {
+    if (!ready()) return;
+    tone("sine", 90, 30, 0.9, 0.6);
+    noise("lowpass", 900, 0.7, 0.55);
+
+    // Pops line up with the firework bursts on screen
+    [0.3, 0.57, 0.8, 1.03, 1.27, 1.53, 1.83].forEach((t) => {
+      noise("highpass", 2500, 0.12, 0.35, t);
+      tone("sine", 160, 60, 0.15, 0.3, t);
+    });
+
+    // Two quick runs cascading down, then one climbing up to a final chord
+    const scale = [523, 587, 659, 784, 880, 1047, 1175, 1319, 1568, 1760, 2093];
+    const notes = [...scale.slice().reverse(), ...scale.slice().reverse(), ...scale];
+    notes.forEach((f, i) => tone("triangle", f, f, 0.25, 0.12, 0.15 + i * 0.065));
+    const chordAt = 0.15 + notes.length * 0.065;
+    [1047, 1319, 1568, 2093].forEach((f) => tone("triangle", f, f, 1.2, 0.1, chordAt));
+  }
+
   // Rising arpeggio for finishing a level
   function levelUp() {
     if (!ready()) return;
@@ -100,5 +183,5 @@ const Sfx = (() => {
     });
   }
 
-  return { jump, coin, bump, stomp, hurt, fall, levelUp };
+  return { jump, superHop, coin, bump, stomp, hurt, fall, bossRoar, applePlop, bossDefeat, fireWhoosh, cough, rivalFall, celebration, levelUp };
 })();

@@ -18,23 +18,33 @@ const MOVE_SPEED = 3.5;
 const JUMP_FORCE = -11;
 const TILE_WIDTH = 2200;
 const NUM_TILES = 5;
-const LEVEL_WIDTH = TILE_WIDTH * NUM_TILES;
+const TILES_END = TILE_WIDTH * NUM_TILES;
+// Flat, clear-weather stretch after the last weather zone where the boss lives
+const ARENA_WIDTH = 900;
+const LEVEL_WIDTH = TILES_END + ARENA_WIDTH;
 const LEVEL_HEIGHT = canvas.height;
 const GROUND_Y = LEVEL_HEIGHT - 40;
 
 const BEST_TIME_KEY = "farmBmxBestRunMs";
 const LEVELS = [
-  { name: "Day", time: "day", dogSpeed: 1 },
-  { name: "Sunset", time: "sunset", dogSpeed: 1.15 },
-  { name: "Night", time: "night", dogSpeed: 1.3 },
+  { name: "Day", time: "day", dogSpeed: 1, boss: "oak" },
+  { name: "Sunset", time: "sunset", dogSpeed: 1.15, boss: "barrel" },
+  { name: "Night", time: "night", dogSpeed: 1.3, boss: "warehouse" },
 ];
 const LEVEL_TRANSITION_MS = 2500;
 const WEATHER_SEQUENCE = ["clear", "cloudy", "rain", "snow", "fog"];
 const FARM_TYPES = ["homestead", "dairy", "crops", "orchard"];
 
 const keys = {};
+const JUMP_KEYS = [" ", "ArrowUp", "w", "W"];
+const SUPER_HOP_FORCE = -10;
+
+// Set on a fresh press (not key-repeat) so a SuperHop needs a second tap
+let jumpPressed = false;
+
 window.addEventListener("keydown", (e) => {
   keys[e.key] = true;
+  if (JUMP_KEYS.includes(e.key) && !e.repeat) jumpPressed = true;
   Music.start();
   if (e.key === "r" || e.key === "R") resetGame();
   if (e.key === "m" || e.key === "M") {
@@ -146,9 +156,673 @@ function makeLevel(config) {
     });
   }
 
-  const goal = { x: LEVEL_WIDTH - 80, y: GROUND_Y - 70, w: 30, h: 70 };
+  // The warehouse arena has a pit in it, so it lays its own ground
+  if (config.boss !== "warehouse") {
+    platforms.push({ x: TILES_END, y: GROUND_Y, w: ARENA_WIDTH, h: 40, type: "ground" });
+  }
 
-  return { platforms, coins, enemies, goal, farmsteads, time: config.time };
+  let boss = null;
+  const ramps = [];
+  if (config.boss === "oak") boss = makeOakBoss(platforms);
+  else if (config.boss === "barrel") boss = makeBarrelBoss(platforms, ramps);
+  else if (config.boss === "warehouse") boss = makeWarehouseBoss(platforms, ramps);
+
+  const goal = boss && boss.goal ? boss.goal : { x: LEVEL_WIDTH - 80, y: GROUND_Y - 70, w: 30, h: 70 };
+
+  return {
+    platforms, ramps, coins, enemies, goal, farmsteads, boss,
+    time: config.time,
+    checkpointX: 40,
+  };
+}
+
+// --- Boss: The Great Oak ---
+// A trunk too tall to SuperHop over. Climb the limbs on its left side,
+// go over the top, and drop down the right side, all while it drops apples.
+const OAK_X = TILES_END + 520;
+const OAK_TRUNK_W = 80;
+const OAK_HEIGHT = 330;
+const OAK_LIMBS = [
+  { left: -320, rise: 90 },
+  { left: -200, rise: 175 },
+  { left: -95, rise: 260 },
+];
+const APPLE_R = 7;
+const APPLE_GRAVITY = 0.22;
+
+function makeOakBoss(platforms) {
+  platforms.push({ x: OAK_X, y: GROUND_Y - OAK_HEIGHT, w: OAK_TRUNK_W, h: OAK_HEIGHT, type: "oakTrunk" });
+  for (const limb of OAK_LIMBS) {
+    platforms.push({ x: OAK_X + limb.left, y: GROUND_Y - limb.rise, w: -limb.left, h: 14, type: "oakLimb", oneWay: true });
+  }
+  return {
+    type: "oak",
+    name: "The Great Oak",
+    intro: "The Great Oak blocks the way — climb up and over it!",
+    active: false,
+    defeated: false,
+    apples: [],
+    dropTimer: 40,
+  };
+}
+
+// Shared by every boss: entering the arena wakes it and sets a checkpoint
+function updateBoss(boss) {
+  if (boss.defeated) {
+    // Let leftover smoke drift away instead of vanishing
+    if (boss.type === "barrel") updateSmokePuffs(boss, false);
+    return;
+  }
+  if (!boss.active && player.x > TILES_END) {
+    boss.active = true;
+    level.checkpointX = TILES_END + 40;
+    if (boss.type === "oak") Sfx.bossRoar();
+    else Sfx.fireWhoosh();
+    messageEl.textContent = `Checkpoint! ${boss.intro}`;
+  }
+  if (boss.type === "oak") updateOakBoss(boss);
+  else if (boss.type === "barrel") updateBarrelBoss(boss);
+  else if (boss.type === "warehouse") updateWarehouseBoss(boss);
+}
+
+// Drawn before the platforms
+function drawBossBehind(boss, viewStart, viewEnd) {
+  if (boss.type === "oak" && OAK_X + 450 > viewStart && OAK_X - 450 < viewEnd) drawOakTree(boss);
+  if (boss.type === "barrel") drawBarrelArena(boss);
+  if (boss.type === "warehouse") drawWarehouseArena(boss);
+}
+
+// Drawn over the player
+function drawBossFront(boss) {
+  if (boss.type === "oak") drawApples(boss);
+  if (boss.type === "barrel") drawSmoke(boss);
+  if (boss.type === "warehouse") drawRivals(boss);
+}
+
+function updateOakBoss(boss) {
+  if (!boss.active) return;
+
+  if (player.x > OAK_X + OAK_TRUNK_W) {
+    boss.defeated = true;
+    boss.apples = [];
+    Sfx.bossDefeat();
+    messageEl.textContent = "You got over The Great Oak! Ride to the flag!";
+    return;
+  }
+
+  boss.dropTimer -= 1;
+  if (boss.dropTimer <= 0) {
+    // Aim near the player, but only from under the crown
+    const target = player.x + player.w / 2 + (Math.random() * 120 - 60);
+    const x = Math.max(OAK_X - 340, Math.min(OAK_X + OAK_TRUNK_W + 40, target));
+    boss.apples.push({ x, y: GROUND_Y - OAK_HEIGHT - 50, vy: 0 });
+    boss.dropTimer = 45 + Math.random() * 35;
+  }
+
+  for (const apple of boss.apples) {
+    apple.vy += APPLE_GRAVITY;
+    apple.y += apple.vy;
+    const nearestX = Math.max(player.x, Math.min(apple.x, player.x + player.w));
+    const nearestY = Math.max(player.y, Math.min(apple.y, player.y + player.h));
+    if (Math.hypot(apple.x - nearestX, apple.y - nearestY) < APPLE_R) {
+      apple.done = true;
+      Sfx.hurt();
+      loseLife();
+      boss.apples = [];
+      return;
+    }
+    if (apple.y + APPLE_R >= GROUND_Y) {
+      apple.done = true;
+      Sfx.applePlop();
+    }
+  }
+  boss.apples = boss.apples.filter((a) => !a.done);
+}
+
+function drawOakTree(boss) {
+  const trunkTop = GROUND_Y - OAK_HEIGHT;
+  const midX = OAK_X + OAK_TRUNK_W / 2;
+
+  // Crown sits behind the limbs so you can see where to land
+  const crown = [
+    [-150, 10, 120], [-30, -40, 120], [110, 0, 110], [-260, 60, 80],
+    [200, 60, 80], [-200, 140, 70], [-60, 120, 80], [40, 60, 90],
+  ];
+  ctx.fillStyle = "#2f6b2a";
+  for (const [dx, dy, r] of crown) {
+    ctx.beginPath();
+    ctx.arc(midX + dx, trunkTop + dy, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#3f8a35";
+  for (const [dx, dy, r] of crown) {
+    ctx.beginPath();
+    ctx.arc(midX + dx - r * 0.2, trunkTop + dy - r * 0.25, r * 0.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Trunk with bark lines and roots
+  ctx.fillStyle = "#5a3a20";
+  ctx.fillRect(OAK_X, trunkTop, OAK_TRUNK_W, OAK_HEIGHT);
+  ctx.beginPath();
+  ctx.moveTo(OAK_X - 30, GROUND_Y);
+  ctx.quadraticCurveTo(OAK_X, GROUND_Y - 10, OAK_X, GROUND_Y - 50);
+  ctx.lineTo(OAK_X + OAK_TRUNK_W, GROUND_Y - 50);
+  ctx.quadraticCurveTo(OAK_X + OAK_TRUNK_W, GROUND_Y - 10, OAK_X + OAK_TRUNK_W + 30, GROUND_Y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#432a16";
+  ctx.lineWidth = 2;
+  for (const bx of [14, 34, 58]) {
+    ctx.beginPath();
+    ctx.moveTo(OAK_X + bx, trunkTop + 40);
+    ctx.bezierCurveTo(OAK_X + bx + 6, trunkTop + 120, OAK_X + bx - 6, trunkTop + 200, OAK_X + bx, GROUND_Y - 10);
+    ctx.stroke();
+  }
+  // Walkable top of the trunk
+  ctx.fillStyle = "#4e8b3a";
+  ctx.fillRect(OAK_X - 4, trunkTop, OAK_TRUNK_W + 8, 6);
+
+  // Face: angry while awake, dizzy once you've beaten it
+  const faceY = GROUND_Y - 150;
+  ctx.fillStyle = "#2a1a0c";
+  if (boss.defeated) {
+    ctx.strokeStyle = "#2a1a0c";
+    ctx.lineWidth = 3;
+    for (const ex of [midX - 18, midX + 18]) {
+      ctx.beginPath();
+      ctx.moveTo(ex - 6, faceY - 6);
+      ctx.lineTo(ex + 6, faceY + 6);
+      ctx.moveTo(ex + 6, faceY - 6);
+      ctx.lineTo(ex - 6, faceY + 6);
+      ctx.stroke();
+    }
+    ctx.beginPath();
+    ctx.ellipse(midX, faceY + 34, 10, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    const look = Math.max(-4, Math.min(4, (player.x - midX) / 60));
+    for (const ex of [midX - 18, midX + 18]) {
+      ctx.fillStyle = "#2a1a0c";
+      ctx.beginPath();
+      ctx.ellipse(ex, faceY, 10, 8, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = boss.active ? "#ffcf3f" : "#c9b37a";
+      ctx.beginPath();
+      ctx.arc(ex + look, faceY + 1, 3.5, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = "#2a1a0c";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(midX - 30, faceY - 16);
+    ctx.lineTo(midX - 8, faceY - 9);
+    ctx.moveTo(midX + 30, faceY - 16);
+    ctx.lineTo(midX + 8, faceY - 9);
+    ctx.stroke();
+    ctx.fillStyle = "#2a1a0c";
+    ctx.beginPath();
+    ctx.moveTo(midX - 16, faceY + 38);
+    ctx.quadraticCurveTo(midX, faceY + 24, midX + 16, faceY + 38);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+function drawOakLimb(p) {
+  ctx.fillStyle = "#5a3a20";
+  ctx.beginPath();
+  ctx.moveTo(p.x + p.w, p.y - 4);
+  ctx.lineTo(p.x + 6, p.y);
+  ctx.quadraticCurveTo(p.x - 4, p.y + p.h / 2, p.x + 6, p.y + p.h);
+  ctx.lineTo(p.x + p.w, p.y + p.h + 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = "#4e8b3a";
+  ctx.beginPath();
+  ctx.ellipse(p.x + 4, p.y - 2, 12, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawApples(boss) {
+  for (const apple of boss.apples) {
+    // Shadow on the ground grows as the apple gets closer
+    const closeness = Math.max(0, Math.min(1, 1 - (GROUND_Y - apple.y) / OAK_HEIGHT));
+    ctx.fillStyle = `rgba(0, 0, 0, ${0.15 + closeness * 0.25})`;
+    ctx.beginPath();
+    ctx.ellipse(apple.x, GROUND_Y + 2, 4 + closeness * 6, 2 + closeness * 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#d62828";
+    ctx.beginPath();
+    ctx.arc(apple.x, apple.y, APPLE_R, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+    ctx.beginPath();
+    ctx.arc(apple.x - 2.5, apple.y - 2.5, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#4a2c18";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(apple.x, apple.y - APPLE_R);
+    ctx.lineTo(apple.x + 2, apple.y - APPLE_R - 4);
+    ctx.stroke();
+  }
+}
+
+// --- Boss: The Burn Barrel ---
+// Hop onto the pallet stack, then time a jump over the barrel's smoke
+// column onto the down ramp. Touching smoke or the barrel starts you over.
+const PALLET_X = TILES_END + 330;
+const PALLET_W = 140;
+const PALLET_H = 100;
+const BARREL_X = PALLET_X + PALLET_W;
+const BARREL_W = 60;
+const BARREL_H = 80;
+const RAMP_X = BARREL_X + BARREL_W + 20;
+const RAMP_W = 220;
+const RAMP_H = 100;
+const SMOKE_ON_FRAMES = 100;
+const SMOKE_OFF_FRAMES = 120;
+const SMOKE_WARN_FRAMES = 40;
+const SMOKE_CYCLE = SMOKE_ON_FRAMES + SMOKE_OFF_FRAMES;
+const SMOKE_LIFE = 110;
+
+function makeBarrelBoss(platforms, ramps) {
+  platforms.push({ x: PALLET_X - 80, y: GROUND_Y - 45, w: 40, h: 45, type: "hay" });
+  platforms.push({ x: PALLET_X, y: GROUND_Y - PALLET_H, w: PALLET_W, h: PALLET_H, type: "pallets" });
+  platforms.push({ x: BARREL_X, y: GROUND_Y - BARREL_H, w: BARREL_W, h: BARREL_H, type: "barrel" });
+  ramps.push({ x: RAMP_X, y: GROUND_Y - RAMP_H, w: RAMP_W, drop: RAMP_H });
+  return {
+    type: "barrel",
+    name: "The Burn Barrel",
+    intro: "Hop up on the pallets and time your jump over The Burn Barrel's smoke!",
+    active: false,
+    defeated: false,
+    puffs: [],
+    cycle: 0,
+  };
+}
+
+function updateSmokePuffs(boss, emitting) {
+  boss.cycle = (boss.cycle + 1) % SMOKE_CYCLE;
+  if (emitting && boss.cycle < SMOKE_ON_FRAMES && boss.cycle % 5 === 0) {
+    boss.puffs.push({
+      x: BARREL_X + BARREL_W / 2 + (Math.random() * 16 - 8),
+      y: GROUND_Y - BARREL_H - 6,
+      vx: (Math.random() - 0.5) * 0.6,
+      vy: -(2.2 + Math.random() * 0.6),
+      r: 14,
+      age: 0,
+    });
+  }
+  for (const puff of boss.puffs) {
+    puff.x += puff.vx;
+    puff.y += puff.vy;
+    puff.r += 0.3;
+    puff.age += 1;
+  }
+  boss.puffs = boss.puffs.filter((p) => p.age < SMOKE_LIFE);
+}
+
+function updateBarrelBoss(boss) {
+  updateSmokePuffs(boss, true);
+  if (!boss.active) return;
+
+  // Warning flare a moment before the next burst of smoke
+  if (boss.cycle === SMOKE_CYCLE - SMOKE_WARN_FRAMES) Sfx.fireWhoosh();
+
+  // Slightly larger than the barrel so bumping its side or top counts as touching
+  const barrelZone = { x: BARREL_X - 2, y: GROUND_Y - BARREL_H - 2, w: BARREL_W + 4, h: BARREL_H + 2 };
+  let hit = rectsOverlap(player, barrelZone);
+  for (const puff of boss.puffs) {
+    if (hit) break;
+    // Thin, high smoke is harmless; only the thick part counts
+    if (puff.age / SMOKE_LIFE > 0.65) continue;
+    const nearestX = Math.max(player.x, Math.min(puff.x, player.x + player.w));
+    const nearestY = Math.max(player.y, Math.min(puff.y, player.y + player.h));
+    if (Math.hypot(puff.x - nearestX, puff.y - nearestY) < puff.r * 0.6) hit = true;
+  }
+  if (hit) {
+    Sfx.cough();
+    messageEl.textContent = "Cough! Too much smoke — back to the start. Wait for the smoke to clear, then jump!";
+    respawnPlayer();
+    return;
+  }
+
+  if (player.onGround && player.x > BARREL_X + BARREL_W) {
+    boss.defeated = true;
+    Sfx.bossDefeat();
+    messageEl.textContent = "You cleared The Burn Barrel! Ride to the flag!";
+  }
+}
+
+function drawBarrelArena(boss) {
+  // Down ramp: a sloped plank on posts
+  ctx.fillStyle = "#6b4a2b";
+  for (const fx of [0.15, 0.5, 0.8]) {
+    const px = RAMP_X + RAMP_W * fx;
+    const top = GROUND_Y - RAMP_H + RAMP_H * fx;
+    ctx.fillRect(px - 3, top, 6, GROUND_Y - top);
+  }
+  ctx.fillStyle = "#a0703f";
+  ctx.beginPath();
+  ctx.moveTo(RAMP_X, GROUND_Y - RAMP_H);
+  ctx.lineTo(RAMP_X + RAMP_W, GROUND_Y);
+  ctx.lineTo(RAMP_X + RAMP_W, GROUND_Y + 4);
+  ctx.lineTo(RAMP_X, GROUND_Y - RAMP_H + 9);
+  ctx.closePath();
+  ctx.fill();
+
+  // Steel drum with ribs and rust
+  const top = GROUND_Y - BARREL_H;
+  ctx.fillStyle = "#4d4f52";
+  ctx.fillRect(BARREL_X, top, BARREL_W, BARREL_H);
+  ctx.fillStyle = "#8a4b26";
+  ctx.fillRect(BARREL_X + 8, top + 30, 14, 20);
+  ctx.fillRect(BARREL_X + 36, top + 52, 12, 16);
+  ctx.fillStyle = "#333538";
+  for (const ry of [6, 40, 72]) ctx.fillRect(BARREL_X - 2, top + ry, BARREL_W + 4, 5);
+  ctx.fillStyle = "#1a1a1a";
+  ctx.fillRect(BARREL_X + 18, top + 58, 7, 7);
+  ctx.fillRect(BARREL_X + 34, top + 20, 7, 7);
+
+  if (boss.defeated) {
+    // Just embers once it's beaten
+    ctx.fillStyle = "#c2410c";
+    for (const ex of [12, 26, 40, 50]) ctx.fillRect(BARREL_X + ex, top - 3, 5, 3);
+    return;
+  }
+
+  // Flames: low while quiet, a big flare as a warning, dark and smoky while puffing
+  const warning = boss.cycle >= SMOKE_CYCLE - SMOKE_WARN_FRAMES;
+  const smoking = boss.cycle < SMOKE_ON_FRAMES;
+  const flameH = warning ? 46 : smoking ? 28 : 16;
+  const t = performance.now() / 90;
+  for (let i = 0; i < 5; i++) {
+    const fx = BARREL_X + 8 + i * 11;
+    const h = flameH * (0.7 + 0.3 * Math.sin(t + i * 1.7));
+    ctx.fillStyle = smoking ? "#b45309" : "#f97316";
+    ctx.beginPath();
+    ctx.moveTo(fx - 7, top);
+    ctx.quadraticCurveTo(fx, top - h * 1.2, fx + 7, top);
+    ctx.fill();
+    ctx.fillStyle = "#fde047";
+    ctx.beginPath();
+    ctx.moveTo(fx - 3, top);
+    ctx.quadraticCurveTo(fx, top - h * 0.6, fx + 3, top);
+    ctx.fill();
+  }
+  if (warning) {
+    ctx.fillStyle = "#fde047";
+    for (let i = 0; i < 6; i++) {
+      const sx = BARREL_X + BARREL_W / 2 + Math.sin(t * 1.3 + i * 2.1) * 26;
+      const sy = top - 20 - ((t * 9 + i * 17) % 60);
+      ctx.fillRect(sx, sy, 3, 3);
+    }
+  }
+}
+
+function drawPalletPlatform(p) {
+  const layer = 20;
+  for (let y = p.y; y < p.y + p.h; y += layer) {
+    ctx.fillStyle = "#b08a5a";
+    ctx.fillRect(p.x, y, p.w, 6);
+    ctx.fillRect(p.x, y + layer - 5, p.w, 5);
+    ctx.fillStyle = "#8a6a46";
+    for (const bx of [4, p.w / 2 - 6, p.w - 16]) ctx.fillRect(p.x + bx, y + 6, 12, layer - 11);
+    ctx.fillStyle = "#3a2a1a";
+    ctx.fillRect(p.x, y + 6, 4, layer - 11);
+  }
+  ctx.fillStyle = "#c9a06a";
+  ctx.fillRect(p.x, p.y, p.w, 3);
+}
+
+function drawSmoke(boss) {
+  for (const puff of boss.puffs) {
+    const alpha = (1 - puff.age / SMOKE_LIFE) * 0.8;
+    ctx.fillStyle = `rgba(70, 70, 76, ${alpha})`;
+    ctx.beginPath();
+    ctx.arc(puff.x, puff.y, puff.r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(130, 130, 136, ${alpha * 0.6})`;
+    ctx.beginPath();
+    ctx.arc(puff.x - puff.r * 0.3, puff.y - puff.r * 0.3, puff.r * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// --- Boss: The Warehouse ---
+// Rival BMX kids launch off the roof, ride down the ramp, and drop into a pit.
+// Jump the pit, hop the oncoming riders, and ride the ramp up to the roof.
+const WH_PIT_X = TILES_END + 260;
+const WH_PIT_W = 100;
+const WH_RAMP_X = TILES_END + 450;
+const WH_RAMP_W = 200;
+const WH_X = WH_RAMP_X + WH_RAMP_W;
+const WH_H = 150;
+const WH_ROOF_Y = GROUND_Y - WH_H;
+const BURST_FRAMES = [0, 18, 34, 48, 62, 76, 92, 110];
+const FIREWORK_COLORS = ["#ff6b6b", "#ffd43b", "#69db7c", "#4dabf7", "#da77f2", "#ffffff", "#ff922b"];
+
+function makeWarehouseBoss(platforms, ramps) {
+  platforms.push({ x: TILES_END, y: GROUND_Y, w: WH_PIT_X - TILES_END, h: 40, type: "ground" });
+  platforms.push({ x: WH_PIT_X + WH_PIT_W, y: GROUND_Y, w: LEVEL_WIDTH - WH_PIT_X - WH_PIT_W, h: 40, type: "ground" });
+  platforms.push({ x: WH_X, y: WH_ROOF_Y, w: LEVEL_WIDTH - WH_X, h: 12, type: "roof", oneWay: true });
+  ramps.push({ x: WH_RAMP_X, y: GROUND_Y, w: WH_RAMP_W, drop: -WH_H });
+  return {
+    type: "warehouse",
+    name: "The Warehouse Crew",
+    intro: "Jump the pit, hop the oncoming riders, and ride up to the warehouse roof!",
+    active: false,
+    defeated: false,
+    riders: [],
+    spawnTimer: 30,
+    particles: [],
+    celebrationFrame: -1,
+    flash: 0,
+    goal: { x: LEVEL_WIDTH - 80, y: WH_ROOF_Y - 70, w: 30, h: 70 },
+  };
+}
+
+// Height of the riding surface under a rival at x, or null over the pit
+function warehouseSurfaceAt(x) {
+  if (x >= WH_X) return WH_ROOF_Y;
+  if (x >= WH_RAMP_X) return GROUND_Y - ((x - WH_RAMP_X) / WH_RAMP_W) * WH_H;
+  if (x >= WH_PIT_X + WH_PIT_W) return GROUND_Y;
+  if (x >= WH_PIT_X) return null;
+  return GROUND_Y;
+}
+
+// Riders and fireworks keep moving even after the level is won
+function updateWarehouseAmbient(boss) {
+  if (!boss.defeated) {
+    boss.spawnTimer -= 1;
+    if (boss.spawnTimer <= 0) {
+      boss.riders.push({
+        x: LEVEL_WIDTH - 40, y: WH_ROOF_Y - 32, w: 28, h: 32,
+        vx: -(2.4 + Math.random() * 0.8), vy: 0,
+        onGround: true, facing: -1, wheelPhase: 0,
+        colors: RIVAL_COLORS[Math.floor(Math.random() * RIVAL_COLORS.length)],
+        falling: false,
+      });
+      boss.spawnTimer = 100 + Math.random() * 60;
+    }
+  }
+
+  for (const r of boss.riders) {
+    r.wheelPhase += r.vx * 0.25;
+    if (r.falling) {
+      r.vy += GRAVITY;
+      r.y += r.vy;
+      r.x = Math.max(WH_PIT_X + 2, r.x + r.vx * 0.5);
+      continue;
+    }
+    r.x += r.vx;
+    const surface = warehouseSurfaceAt(r.x + r.w / 2);
+    if (surface === null) {
+      r.falling = true;
+      r.onGround = false;
+      if (Math.abs(r.x - (camera.x + canvas.width / 2)) < canvas.width) Sfx.rivalFall();
+    } else {
+      r.y = surface - r.h;
+    }
+  }
+  boss.riders = boss.riders.filter((r) => r.y < LEVEL_HEIGHT + 80);
+
+  if (boss.celebrationFrame >= 0) {
+    const i = BURST_FRAMES.indexOf(boss.celebrationFrame);
+    if (i === 0) addFireworkBurst(boss, player.x + player.w / 2, player.y, true);
+    else if (i > 0) addFireworkBurst(boss, camera.x + 120 + Math.random() * 560, 60 + Math.random() * 140, false);
+    boss.celebrationFrame += 1;
+  }
+  for (const p of boss.particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vx *= 0.985;
+    p.vy = p.vy * 0.985 + 0.05;
+    p.life -= 1;
+  }
+  boss.particles = boss.particles.filter((p) => p.life > 0);
+  boss.flash *= 0.9;
+}
+
+function addFireworkBurst(boss, x, y, big) {
+  const count = big ? 140 : 60;
+  const color = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const speed = (big ? 2 : 1) + Math.random() * (big ? 7 : 4);
+    const life = 50 + Math.random() * 40;
+    boss.particles.push({
+      x, y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life, maxLife: life,
+      color: big ? FIREWORK_COLORS[i % FIREWORK_COLORS.length] : color,
+    });
+  }
+  if (big) boss.flash = 1;
+}
+
+function updateWarehouseBoss(boss) {
+  updateWarehouseAmbient(boss);
+  if (!boss.active) return;
+
+  for (const r of boss.riders) {
+    if (r.falling || !rectsOverlap(player, r)) continue;
+    const stomping = player.vy > 0 && player.y + player.h - player.vy <= r.y + 8;
+    if (stomping) {
+      // Bounce off their helmet and knock them into a wipeout
+      player.vy = JUMP_FORCE * 0.6;
+      r.falling = true;
+      r.vy = -3;
+      Sfx.stomp();
+    } else {
+      Sfx.hurt();
+      loseLife();
+      return;
+    }
+  }
+
+  const onRoof = player.onGround && player.x + player.w / 2 >= WH_X && player.y + player.h <= WH_ROOF_Y + 1;
+  if (onRoof) {
+    boss.defeated = true;
+    boss.celebrationFrame = 0;
+    Sfx.celebration();
+    completeLevel(false);
+  }
+}
+
+function drawWarehouseArena(boss) {
+  // Pit: a dark hole dropping below ground
+  const pitGrad = ctx.createLinearGradient(0, GROUND_Y, 0, canvas.height);
+  pitGrad.addColorStop(0, "#3a2a1a");
+  pitGrad.addColorStop(1, "#050302");
+  ctx.fillStyle = pitGrad;
+  ctx.fillRect(WH_PIT_X, GROUND_Y, WH_PIT_W, canvas.height - GROUND_Y);
+
+  // Ramp up to the roof
+  ctx.fillStyle = "#4a4f57";
+  for (const fx of [0.3, 0.6, 0.9]) {
+    const px = WH_RAMP_X + WH_RAMP_W * fx;
+    const top = GROUND_Y - WH_H * fx;
+    ctx.fillRect(px - 3, top, 6, GROUND_Y - top);
+  }
+  ctx.fillStyle = "#8d6e4c";
+  ctx.beginPath();
+  ctx.moveTo(WH_RAMP_X, GROUND_Y);
+  ctx.lineTo(WH_X, WH_ROOF_Y);
+  ctx.lineTo(WH_X, WH_ROOF_Y + 9);
+  ctx.lineTo(WH_RAMP_X + 10, GROUND_Y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Corrugated metal warehouse
+  const w = LEVEL_WIDTH - WH_X;
+  ctx.fillStyle = "#5b6470";
+  ctx.fillRect(WH_X, WH_ROOF_Y, w, WH_H);
+  ctx.fillStyle = "#4b535e";
+  for (let x = WH_X + 4; x < LEVEL_WIDTH; x += 10) ctx.fillRect(x, WH_ROOF_Y + 10, 3, WH_H - 10);
+  ctx.fillStyle = "#3d434b";
+  ctx.fillRect(WH_X - 4, WH_ROOF_Y - 2, w + 4, 12);
+  ctx.fillStyle = "#7b8592";
+  ctx.fillRect(WH_X + 70, GROUND_Y - 80, 90, 80);
+  ctx.fillStyle = "#6a7380";
+  for (let y = GROUND_Y - 76; y < GROUND_Y; y += 8) ctx.fillRect(WH_X + 70, y, 90, 2);
+  ctx.fillStyle = "#e9ecef";
+  ctx.font = "bold 16px 'Segoe UI', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("BMX DEPOT", WH_X + w / 2, WH_ROOF_Y + 36);
+  ctx.textAlign = "start";
+}
+
+function drawRivals(boss) {
+  for (const r of boss.riders) {
+    if (r.falling) {
+      // Riders that drop into the pit disappear below ground
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(WH_PIT_X, -1000, WH_PIT_W, 3000);
+      if (r.y + r.h > GROUND_Y) ctx.clip();
+      drawPlayer(r, r.colors);
+      ctx.restore();
+    } else {
+      drawPlayer(r, r.colors);
+    }
+  }
+}
+
+// Drawn after the night tint so they glow: rival headlights, lit windows, fireworks
+function drawWarehouseLights(boss) {
+  ctx.fillStyle = "rgba(255, 212, 59, 0.85)";
+  for (const wx of [WH_X + 20, WH_X + 190]) ctx.fillRect(wx, WH_ROOF_Y + 50, 24, 16);
+  if (level.time === "night") {
+    for (const r of boss.riders) if (!r.falling) drawHeadlight(r);
+  }
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  for (const p of boss.particles) {
+    ctx.globalAlpha = Math.max(0, p.life / p.maxLife);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 2.2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+function drawBossBanner(boss) {
+  if (!boss.active || boss.defeated) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(20, 12, 4, 0.7)";
+  ctx.fillRect(canvas.width / 2 - 150, 10, 300, 30);
+  ctx.fillStyle = "#ffcf3f";
+  ctx.font = "bold 16px 'Segoe UI', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`BOSS: ${boss.name}`, canvas.width / 2, 25);
+  ctx.restore();
 }
 
 let level, player, camera, score, lives, state;
@@ -186,6 +860,8 @@ function loadLevel(index) {
     onGround: false,
     facing: 1,
     wheelPhase: 0,
+    superHopUsed: false,
+    hopPuff: null,
   };
   camera = { x: 0 };
   score = 0;
@@ -197,11 +873,11 @@ function loadLevel(index) {
   messageEl.textContent = "";
 }
 
-function completeLevel() {
+function completeLevel(playFanfare = true) {
   timeBeforeLevel = elapsedMs;
   if (levelIndex < LEVELS.length - 1) {
     state = "levelComplete";
-    Sfx.levelUp();
+    if (playFanfare) Sfx.levelUp();
     const next = levelIndex + 1;
     messageEl.textContent = `Level ${levelIndex + 1} complete! Get ready for Level ${next + 1} — ${LEVELS[next].name}`;
     setTimeout(() => {
@@ -212,7 +888,7 @@ function completeLevel() {
   }
 
   state = "won";
-  Sfx.levelUp();
+  if (playFanfare) Sfx.levelUp();
   if (bestTime === null || elapsedMs < bestTime) {
     bestTime = elapsedMs;
     localStorage.setItem(BEST_TIME_KEY, String(bestTime));
@@ -224,9 +900,10 @@ function completeLevel() {
 }
 
 function respawnPlayer() {
-  player.x = 40;
+  player.x = level.checkpointX;
   player.y = GROUND_Y - 32;
   player.vx = 0;
+  player.superHopUsed = false;
   player.vy = 0;
 }
 
@@ -242,7 +919,12 @@ function loseLife() {
 }
 
 function update() {
-  if (state !== "playing") return;
+  if (state !== "playing") {
+    jumpPressed = false;
+    // Keep the victory fireworks going after the final level is won
+    if (level.boss && level.boss.type === "warehouse") updateWarehouseAmbient(level.boss);
+    return;
+  }
 
   elapsedMs = timeBeforeLevel + (performance.now() - startTime);
   timerEl.textContent = formatTime(elapsedMs);
@@ -257,11 +939,17 @@ function update() {
     player.vx = 0;
   }
 
-  if ((keys[" "] || keys["ArrowUp"] || keys["w"] || keys["W"]) && player.onGround) {
+  if (JUMP_KEYS.some((k) => keys[k]) && player.onGround) {
     player.vy = JUMP_FORCE;
     player.onGround = false;
     Sfx.jump();
+  } else if (jumpPressed && !player.onGround && !player.superHopUsed) {
+    player.vy = SUPER_HOP_FORCE;
+    player.superHopUsed = true;
+    player.hopPuff = { x: player.x + player.w / 2, y: player.y + player.h, age: 0 };
+    Sfx.superHop();
   }
+  jumpPressed = false;
 
   player.vy += GRAVITY;
   player.x += player.vx;
@@ -275,10 +963,15 @@ function update() {
   for (const p of level.platforms) {
     if (rectsOverlap(player, p)) {
       const prevBottom = player.y + player.h - player.vy;
-      if (player.vy >= 0 && prevBottom <= p.y + 1) {
+      // One-way platforms get a few pixels of slack so you can roll onto them off a ramp
+      const landingOnTop = player.vy >= 0 && prevBottom <= p.y + (p.oneWay ? 4 : 1);
+      // One-way platforms (tree limbs) can be hopped up through from below
+      if (p.oneWay && !landingOnTop) continue;
+      if (landingOnTop) {
         player.y = p.y - player.h;
         player.vy = 0;
         player.onGround = true;
+        player.superHopUsed = false;
       } else if (player.vy < 0 && player.y - player.vy >= p.y + p.h - 1) {
         player.y = p.y + p.h;
         player.vy = 0;
@@ -289,6 +982,25 @@ function update() {
         player.x = p.x + p.w;
         blockedSideways = true;
       }
+    }
+  }
+
+  // Ramps: land on the sloped surface and stay stuck to it while riding down
+  const wasOnRamp = player.onRamp;
+  player.onRamp = false;
+  for (const r of level.ramps) {
+    const cx = player.x + player.w / 2;
+    if (cx < r.x || cx > r.x + r.w) continue;
+    const surface = r.y + ((cx - r.x) / r.w) * r.drop;
+    const bottom = player.y + player.h;
+    const prevBottom = bottom - player.vy;
+    const sticking = wasOnRamp && bottom < surface && surface - bottom < 12;
+    if (player.vy >= 0 && (bottom >= surface || sticking) && prevBottom <= surface + 12) {
+      player.y = surface - player.h;
+      player.vy = 0;
+      player.onGround = true;
+      player.superHopUsed = false;
+      player.onRamp = true;
     }
   }
 
@@ -333,6 +1045,8 @@ function update() {
     }
   }
 
+  if (state === "playing" && level.boss) updateBoss(level.boss);
+
   if (state === "playing" && rectsOverlap(player, level.goal)) {
     completeLevel();
   }
@@ -340,6 +1054,26 @@ function update() {
   camera.x = Math.max(0, Math.min(player.x - canvas.width / 2, LEVEL_WIDTH - canvas.width));
 
   player.wheelPhase += player.vx * 0.25;
+
+  if (player.hopPuff) {
+    player.hopPuff.age += 1;
+    if (player.hopPuff.age > HOP_PUFF_FRAMES) player.hopPuff = null;
+  }
+}
+
+const HOP_PUFF_FRAMES = 18;
+
+// Expanding ring of air left behind where the SuperHop kicked off
+function drawHopPuff(puff) {
+  const t = puff.age / HOP_PUFF_FRAMES;
+  ctx.save();
+  ctx.globalAlpha = 1 - t;
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 3 * (1 - t) + 1;
+  ctx.beginPath();
+  ctx.ellipse(puff.x, puff.y + t * 6, 10 + t * 22, 3 + t * 6, 0, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.restore();
 }
 
 const SKY_GRADIENTS = {
@@ -821,17 +1555,20 @@ function drawBackground() {
   ctx.restore();
 }
 
+// The boss arena after the last tile clears up so falling apples are easy to see
+const WEATHER_ZONES = [...WEATHER_SEQUENCE, "clear"];
+
 function getWeatherBlend(worldX) {
   const tilePos = worldX / TILE_WIDTH;
-  const idx = Math.max(0, Math.min(WEATHER_SEQUENCE.length - 1, Math.floor(tilePos)));
+  const idx = Math.max(0, Math.min(WEATHER_ZONES.length - 1, Math.floor(tilePos)));
   const frac = tilePos - idx;
   const blendZone = 0.12;
-  const nextIdx = Math.min(WEATHER_SEQUENCE.length - 1, idx + 1);
+  const nextIdx = Math.min(WEATHER_ZONES.length - 1, idx + 1);
   let blend = 0;
-  if (frac > 1 - blendZone && idx < WEATHER_SEQUENCE.length - 1) {
+  if (frac > 1 - blendZone && idx < WEATHER_ZONES.length - 1) {
     blend = (frac - (1 - blendZone)) / blendZone;
   }
-  return { current: WEATHER_SEQUENCE[idx], next: WEATHER_SEQUENCE[nextIdx], blend };
+  return { current: WEATHER_ZONES[idx], next: WEATHER_ZONES[nextIdx], blend };
 }
 
 const RAIN_COUNT = 110;
@@ -1016,6 +1753,13 @@ const BIKE_FRAME = "#2b2b2b";
 const BIKE_TIRE = "#1a1a1a";
 const BIKE_RIM = "#c9ccd0";
 
+const PLAYER_COLORS = { shirt: SHIRT, shirtDark: SHIRT_DARK, helmet: HELMET, helmetDark: HELMET_DARK };
+const RIVAL_COLORS = [
+  { shirt: "#2f9e44", shirtDark: "#21702f", helmet: "#f59f00", helmetDark: "#b87500" },
+  { shirt: "#7048e8", shirtDark: "#5230b3", helmet: "#e03131", helmetDark: "#a32020" },
+  { shirt: "#f08c00", shirtDark: "#b56900", helmet: "#212529", helmetDark: "#000000" },
+];
+
 function drawWheel(cx, cy, r, angle) {
   ctx.fillStyle = BIKE_TIRE;
   ctx.beginPath();
@@ -1036,7 +1780,7 @@ function drawWheel(cx, cy, r, angle) {
   }
 }
 
-function drawPlayer(p) {
+function drawPlayer(p, colors = PLAYER_COLORS) {
   const cx = p.x + p.w / 2;
   const feetY = p.y + p.h;
   const wheelR = 9;
@@ -1111,10 +1855,10 @@ function drawPlayer(p) {
     const a = crankAngle + off;
     const footX = bb.x + Math.cos(a) * 7;
     const footY = bb.y + Math.sin(a) * 7;
-    drawLimbVec(hip.x, hip.y, footX - hip.x, footY - hip.y, 5, SHIRT_DARK);
+    drawLimbVec(hip.x, hip.y, footX - hip.x, footY - hip.y, 5, colors.shirtDark);
   }
 
-  ctx.fillStyle = SHIRT;
+  ctx.fillStyle = colors.shirt;
   ctx.beginPath();
   ctx.moveTo(hip.x - 5, hip.y + 4);
   ctx.lineTo(hip.x + 4, hip.y + 2);
@@ -1122,14 +1866,14 @@ function drawPlayer(p) {
   ctx.lineTo(shoulder.x - 5, shoulder.y + 3);
   ctx.closePath();
   ctx.fill();
-  ctx.strokeStyle = SHIRT_DARK;
+  ctx.strokeStyle = colors.shirtDark;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
   ctx.moveTo(hip.x - 2, hip.y + 2);
   ctx.lineTo(shoulder.x - 1, shoulder.y + 1);
   ctx.stroke();
 
-  drawLimbVec(shoulder.x, shoulder.y, handlebar.x - shoulder.x, handlebar.y - shoulder.y, 4, SHIRT);
+  drawLimbVec(shoulder.x, shoulder.y, handlebar.x - shoulder.x, handlebar.y - shoulder.y, 4, colors.shirt);
   ctx.fillStyle = SKIN;
   ctx.beginPath();
   ctx.arc(handlebar.x, handlebar.y, 2.5, 0, Math.PI * 2);
@@ -1145,14 +1889,14 @@ function drawPlayer(p) {
   ctx.arc(headCenter.x + 3, headCenter.y - 1, 1.1, 0, Math.PI * 2);
   ctx.fill();
 
-  ctx.fillStyle = HELMET;
+  ctx.fillStyle = colors.helmet;
   ctx.beginPath();
   ctx.arc(headCenter.x, headCenter.y - 1, headR + 2, Math.PI, 0);
   ctx.fill();
   ctx.fillRect(headCenter.x - headR - 2, headCenter.y - 1, (headR + 2) * 2, 3);
-  ctx.fillStyle = HELMET_DARK;
+  ctx.fillStyle = colors.helmetDark;
   ctx.fillRect(headCenter.x - headR - 2, headCenter.y - 3, headR * 2 + 4, 2);
-  ctx.fillStyle = HELMET;
+  ctx.fillStyle = colors.helmet;
   ctx.beginPath();
   ctx.ellipse(headCenter.x + headR, headCenter.y + 1, 3, 1.6, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -1244,6 +1988,9 @@ function drawPlatform(p) {
   if (p.type === "pumpkin") drawPumpkinPlatform(p);
   else if (p.type === "hay") drawHayPlatform(p);
   else if (p.type === "wagon") drawWagonPlatform(p);
+  else if (p.type === "oakLimb") drawOakLimb(p);
+  else if (p.type === "pallets") drawPalletPlatform(p);
+  else if (p.type === "oakTrunk" || p.type === "barrel" || p.type === "roof") return; // drawn with their boss
   else drawGroundPlatform(p);
 }
 
@@ -1260,6 +2007,9 @@ function draw() {
   for (let x = Math.max(10, Math.floor(viewStart / 42) * 42); x < Math.min(LEVEL_WIDTH, viewEnd); x += 42) {
     drawFencePost(x, GROUND_Y);
   }
+
+  // The crown is much wider than the trunk, so cull on the whole tree
+  if (level.boss) drawBossBehind(level.boss, viewStart, viewEnd);
 
   for (const p of level.platforms) {
     if (p.x + p.w < viewStart || p.x > viewEnd) continue;
@@ -1278,7 +2028,9 @@ function draw() {
   ctx.fillStyle = "#06d6a0";
   ctx.fillRect(g.x + 6, g.y, 24, 18);
 
+  if (player.hopPuff) drawHopPuff(player.hopPuff);
   drawPlayer(player);
+  if (level.boss) drawBossFront(level.boss);
 
   ctx.restore();
 
@@ -1303,9 +2055,17 @@ function draw() {
   ctx.translate(-camera.x, 0);
   drawCoins(viewStart, viewEnd);
   if (level.time === "night") drawHeadlight(player);
+  if (level.boss && level.boss.type === "warehouse") drawWarehouseLights(level.boss);
   ctx.restore();
 
   drawWeatherEffects();
+  if (level.boss) drawBossBanner(level.boss);
+
+  // White flash from the big celebration explosion
+  if (level.boss && level.boss.flash > 0.02) {
+    ctx.fillStyle = `rgba(255, 255, 255, ${level.boss.flash * 0.6})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 }
 
 function loop() {

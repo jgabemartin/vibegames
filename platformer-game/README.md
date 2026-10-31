@@ -42,10 +42,22 @@ There are three levels, each a full ride through all five weather zones:
 
 Lives and the timer carry over between levels, and your best time is for a full run through all three. Press R to start over from Level 1.
 
+## Bosses
+
+After the five weather zones, the skies clear and you reach the boss arena. Reaching the arena sets a checkpoint, so if you lose a life there you restart at the arena, not at the beginning of the level.
+
+- **Level 1, The Great Oak:** a giant angry oak whose trunk is too tall to hop over. Climb its branches (you can hop up through them from below), ride over the top of the trunk, and drop down the other side to beat it. While you climb, it drops apples on you. Watch for their shadows on the ground. Then ride to the flag.
+- **Level 2, The Burn Barrel:** a rusty burn barrel that puffs out columns of smoke. Hop up the hay bale onto the stack of pallets, then jump over the barrel onto the down ramp. If you touch the smoke or the barrel, you cough and start over at the beginning of the arena. You don't lose a life. Timing is everything:
+  - **Low flames:** the smoke is clearing. Once the column has drifted up, it's your chance to jump.
+  - **Big flare with sparks:** a fresh burst of smoke is coming. Jump now or wait for the next gap.
+  - **Thick smoke:** wait.
+- **Level 3, The Warehouse Crew:** rival BMX kids keep launching off the roof of the BMX Depot warehouse, riding down its ramp, and dropping into a pit below ground. Jump the pit, then hop over the oncoming riders. Their headlights show them coming in the dark. You can also bounce off their helmets. Ride up the ramp to the roof. Getting hit costs a life. Reaching the roof wins the game with a big fireworks celebration.
+
 ## Controls
 
 - Arrow keys / A D — pedal left/right
 - Space / Up / W — hop
+- Press hop again in mid-air — **SuperHop**: a second hop before you land, with its own sound and a puff of air. You get one per jump, and it recharges when you touch the ground. It also works if you roll off a ledge, which can save you from a pit.
 - R — restart from Level 1
 - M — toggle music (sound effects stay on)
 
