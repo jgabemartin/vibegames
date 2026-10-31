@@ -9,6 +9,7 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 | Key   | Action                              |
 |-------|-------------------------------------|
 | Space | Start / swing / next round          |
+| H     | Switch between right- and left-handed batter |
 | P     | Pause / resume (also pauses when the window loses focus) |
 | M     | Mute / unmute sound                 |
 | R     | Restart the current round           |
@@ -32,13 +33,23 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 - You get **one swing per pitch**.
 - If you don't swing, a pitch in the strike zone is a **called strike** and one outside it is a **ball**. Neither scores points.
 
+### Right- or left-handed
+
+- Press **H** to switch sides. The game remembers your choice.
+- A **right-handed** batter stands in the third-base-side box. A **left-handed** batter stands in the first-base-side box.
+- If you switch during a pitch, the change takes effect before the next pitch.
+- Everything about direction flips with the batter:
+  - "Inside" means the side of the plate closest to the batter.
+  - **Pulling the ball** goes to left field for a righty and to right field for a lefty.
+  - **Going the other way** goes to right field for a righty and to left field for a lefty.
+
 ### Swinging and contact
 
 - Timing decides whether you hit the ball. The contact window is about **150 ms** wide for slow pitches, shrinking to about **110 ms** for fast ones. Outside the window you swing and miss.
 - **Timing also aims the ball:**
   - Right on time sends it up the middle.
-  - Early pulls it toward left field.
-  - Late pushes it toward right field.
+  - Early pulls it: to left field for a righty, right field for a lefty.
+  - Late pushes it the other way.
   - At the edges of the window it can go foul.
 - **Pitch height** sets the launch angle:
   - Low pitches become ground balls.
@@ -97,6 +108,11 @@ A ball that reaches the wall or goes over it can't be caught.
 - Middle-high pitches hit squarely are your best chance at the wall or a home run.
 
 ## Change log
+
+### 1.4: Left-handed batting and louder hits
+
+- Press H to bat right- or left-handed. The batter, pitch locations, pull direction and the strike-zone panel all mirror, and the choice is remembered.
+- The bat crack and the ball-in-flight whistle are louder, and the crack has more low end. A limiter keeps loud moments from distorting.
 
 ### 1.3: Outfielders and catches
 

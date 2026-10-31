@@ -15,7 +15,14 @@ const Sfx = (() => {
       ctx = new AC();
       master = ctx.createGain();
       master.gain.value = muted ? 0 : VOLUME;
-      master.connect(ctx.destination);
+      // Limiter so loud moments (bat crack, crowd) don't clip
+      const limiter = ctx.createDynamicsCompressor();
+      limiter.threshold.value = -6;
+      limiter.knee.value = 4;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.15;
+      master.connect(limiter).connect(ctx.destination);
       const len = Math.floor(ctx.sampleRate * 2);
       noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
       const data = noiseBuffer.getChannelData(0);
@@ -109,14 +116,16 @@ const Sfx = (() => {
   function hit(quality) {
     if (!ready()) return;
     if (quality > 0.45) {
-      noise("highpass", 1800 + quality * 1800, 0.09, 0.5 + quality * 0.5);
-      tone("square", 1900 + quality * 600, 1200, 0.05, 0.2 + quality * 0.15);
-      tone("triangle", 520, 260, 0.12, 0.35);
-      noise("bandpass", 900, 0.2, 0.25, 0.01, 2);
+      noise("highpass", 1800 + quality * 1800, 0.11, 0.9 + quality * 0.8);
+      tone("square", 1900 + quality * 600, 1200, 0.06, 0.35 + quality * 0.25);
+      tone("triangle", 520, 260, 0.14, 0.6);
+      noise("bandpass", 900, 0.25, 0.45, 0.01, 2);
+      // Low body so the crack has weight
+      tone("sine", 180, 90, 0.12, 0.45);
     } else {
       // Dull, off-the-handle thunk
-      tone("triangle", 260, 120, 0.14, 0.4);
-      noise("lowpass", 900, 0.1, 0.4);
+      tone("triangle", 260, 120, 0.16, 0.7);
+      noise("lowpass", 900, 0.12, 0.7);
     }
   }
 
@@ -144,13 +153,13 @@ const Sfx = (() => {
     osc.frequency.linearRampToValueAtTime(1100, apex);
     osc.frequency.linearRampToValueAtTime(500, end);
     const oscGain = ctx.createGain();
-    oscGain.gain.value = 0.04;
+    oscGain.gain.value = 0.1;
 
     const gain = ctx.createGain();
     gain.gain.setValueAtTime(0.0001, time);
-    gain.gain.exponentialRampToValueAtTime(0.22, time + 0.15);
-    gain.gain.linearRampToValueAtTime(0.12, apex);
-    gain.gain.linearRampToValueAtTime(0.2, end - 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.55, time + 0.15);
+    gain.gain.linearRampToValueAtTime(0.35, apex);
+    gain.gain.linearRampToValueAtTime(0.5, end - 0.05);
     gain.gain.linearRampToValueAtTime(0.0001, end);
 
     src.connect(filter).connect(gain);

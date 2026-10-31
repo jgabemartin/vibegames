@@ -79,7 +79,21 @@
     best: document.getElementById("best"),
     history: document.getElementById("history"),
     sound: document.getElementById("sound"),
+    hand: document.getElementById("hand"),
   };
+
+  // ---- Batter handedness ----
+  // Right-handers stand in the third-base box; lefties are mirrored into the first-base box.
+  const HAND_KEY = "battingPractice.batterHand";
+  let batterHand = "R";
+  try {
+    if (localStorage.getItem(HAND_KEY) === "L") batterHand = "L";
+  } catch (e) { /* storage unavailable */ }
+  let pendingHand = null; // a switch requested mid-pitch waits for the next pitch
+
+  function handSide() {
+    return batterHand === "R" ? 1 : -1;
+  }
 
   // ---- Helpers ----
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -242,7 +256,8 @@
       h,
       v,
       label: `${type.name} · ${where} · ${mph} mph`,
-      xp: h * 0.75 * HOME_SCALE,
+      side: handSide(),
+      xp: handSide() * h * 0.75 * HOME_SCALE, // "inside" is toward the batter's box
       zp: 2.5 + v * 0.9,
       breakX: rand(-0.8, 0.8),
       T: RELEASE.y / (mph * MPH),
@@ -308,7 +323,32 @@
     setMode("roundover");
   }
 
+  function applyHand(hand) {
+    batterHand = hand;
+    pendingHand = null;
+    try {
+      localStorage.setItem(HAND_KEY, hand);
+    } catch (e) { /* ignore */ }
+    updateHud();
+  }
+
+  // H key: switch sides. Takes effect now if no pitch is live, otherwise before the next pitch.
+  function toggleHand() {
+    const next = (pendingHand || batterHand) === "R" ? "L" : "R";
+    const word = next === "R" ? "RIGHT-HANDED" : "LEFT-HANDED";
+    if (mode === "title" || mode === "roundover" || mode === "result" || mode === "ready") {
+      applyHand(next);
+      // A pitch that hasn't been thrown yet is re-aimed for the new side
+      if (mode === "ready") pitch = newPitch();
+      if (mode !== "title" && mode !== "roundover") showBanner(`BATTING ${word}`, "", "#ffffff");
+    } else {
+      pendingHand = next === batterHand ? null : next;
+      showBanner(pendingHand ? `${word} NEXT PITCH` : `STAYING ${batterHand === "R" ? "RIGHT" : "LEFT"}-HANDED`, "", "#ffffff");
+    }
+  }
+
   function startReady() {
+    if (pendingHand) applyHand(pendingHand);
     pitch = newPitch();
     ball = null;
     play = null;
@@ -364,7 +404,8 @@
     const quality = clamp(timingQ * locQ, 0, 1);
 
     let ev = 58 + 46 * quality + p.mph * 0.12;
-    let spray = errMs * 0.33 + p.h * 10 + gauss() * 5;
+    // Early pulls and inside pitches get pulled: to left field for a righty, right field for a lefty
+    let spray = p.side * (errMs * 0.33 + p.h * 10) + gauss() * 5;
     let launch = 20 + p.v * 22 + gauss() * 6;
 
     if (quality < 0.3) {
@@ -707,6 +748,7 @@
     hud.score.textContent = round.score;
     hud.best.textContent = best;
     hud.history.textContent = history.length ? history.join(", ") : "--";
+    if (hud.hand) hud.hand.textContent = batterHand === "R" ? "Right" : "Left";
   }
 
   function showBanner(text, sub, color, big = false) {
@@ -1267,7 +1309,7 @@
 
   function drawBatter() {
     ctx.save();
-    ctx.scale(HOME_SCALE, HOME_SCALE);
+    ctx.scale(HOME_SCALE * handSide(), HOME_SCALE); // mirror lefties into the other box
     drawBatterBody();
     ctx.restore();
   }
@@ -1390,13 +1432,15 @@
     ctx.stroke();
     ctx.fillStyle = "rgba(255,255,255,0.5)";
     ctx.font = "9px Segoe UI, Arial";
-    ctx.fillText("IN", zx - 14, zy + zh / 2 - 5);
-    ctx.fillText("OUT", zx + zw + 15, zy + zh / 2 - 5);
+    // Catcher's view: inside is on the batter's side of the plate
+    const side = handSide();
+    ctx.fillText(side > 0 ? "IN" : "OUT", zx - 14, zy + zh / 2 - 5);
+    ctx.fillText(side > 0 ? "OUT" : "IN", zx + zw + 15, zy + zh / 2 - 5);
 
     const showCurrent = pitch && mode === "pitch" && pitch.t >= pitch.T;
     const z = showCurrent ? { h: pitch.h, v: pitch.v, color: "#ffffff" } : lastZone;
     if (z) {
-      const bx = zx + zw / 2 + (z.h / 1.5) * (zw / 2);
+      const bx = zx + zw / 2 + ((side * z.h) / 1.5) * (zw / 2);
       const by = zy + zh / 2 - (z.v / 1.5) * (zh / 2);
       ctx.fillStyle = z.color;
       circle(bx, by, 6);
@@ -1564,6 +1608,9 @@
       ctx.font = "bold 18px Segoe UI, Arial";
       ctx.fillText("Press Space for the next round", W / 2, H - 40);
     }
+    ctx.fillStyle = "#aaa";
+    ctx.font = "14px Segoe UI, Arial";
+    ctx.fillText(`Batting ${batterHand === "R" ? "right" : "left"}-handed · H to switch`, W / 2, H - 16);
   }
 
   function drawTitle() {
@@ -1580,6 +1627,9 @@
     ctx.fillStyle = "#ccc";
     ctx.fillText(`${PITCHES_PER_ROUND} pitches per round. Score by placing hits in the shaded zones.`, W / 2, H / 2 + 38);
     ctx.fillText("Space = swing   ·   early pulls, late pushes   ·   low = grounders, high = fly balls", W / 2, H / 2 + 62);
+    ctx.fillStyle = "#ffd666";
+    ctx.font = "bold 17px Segoe UI, Arial";
+    ctx.fillText(`Batting ${batterHand === "R" ? "RIGHT" : "LEFT"}-handed   ·   press H to switch`, W / 2, H / 2 + 104);
   }
 
   function render() {
@@ -1664,6 +1714,8 @@
       hud.sound.textContent = Sfx.toggleMute() ? "Off" : "On";
     } else if (e.code === "KeyP") {
       setPaused(!paused);
+    } else if (e.code === "KeyH") {
+      if (!paused) toggleHand();
     } else if (e.code === "KeyR") {
       // Restart the current round from pitch 1
       if (mode === "title" || paused) return;
