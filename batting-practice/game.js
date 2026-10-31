@@ -60,9 +60,14 @@
   const FIELDERS = [...INFIELDERS, ...OUTFIELDERS];
   const CATCH_Z = 5; // fielders catch the ball as it comes down through this height
   const GAPS = [[-25, -18], [-6, 6], [18, 25]];
+  // Outfield gaps between LF and CF and between CF and RF: hard-hit balls landing here earn extra
+  const OF_GAPS = [[-19, -8], [8, 19]];
+  const OF_GAP_R = 230; // gap zone starts this deep
+  const GAP_EV = 100; // mph off the bat to count as hard hit
   const ZONES = {
     gap: { label: "IN THE GAP", name: "Infield gap", pts: 2, shade: "rgba(120,190,255,0.28)", color: "#8cc8ff" },
     outfield: { label: "BASE HIT", name: "Base hit", pts: 3, shade: "rgba(255,255,255,0.10)", color: "#e4f5dc" },
+    ofgap: { label: "SPLIT THE GAP", name: "Gapper (hard hit)", pts: 5, shade: "rgba(190,140,255,0.22)", color: "#c9a2ff" },
     line: { label: "DOWN THE LINE", name: "Down the line", pts: 5, shade: "rgba(255,214,102,0.30)", color: "#ffd666" },
     wall: { label: "OFF THE WALL", name: "Off the wall", pts: 6, shade: "rgba(255,140,80,0.45)", color: "#ff9a5e" },
     hr: { label: "HOME RUN!", name: "Home run", pts: 10, shade: "rgba(255,90,90,0.20)", color: "#ff6b6b" },
@@ -220,20 +225,24 @@
     return { fielder: z.fielder, x: b.x + ux * along, y: b.y + uy * along, along, x0: b.x, y0: b.y, ux, uy };
   }
 
-  // Hard, low line drives give outfielders less time to react, shrinking their range
-  // to as little as 55% for a 110+ mph liner at a 10° launch
-  function rangeFactor(ev, launch) {
+  // How much of an outfielder's circle he covers on this ball. Hard, low line drives give him
+  // less time to react (down to 55% for a 110+ mph liner at 10°); high flies that hang in the
+  // air give him time to run farther (from 4.5 s of hang time, up to 140% at 6.5 s or more).
+  function rangeFactor(ev, launch, hangT) {
     const hard = clamp((ev - 85) / 25, 0, 1);
     const low = clamp((32 - launch) / 22, 0, 1);
-    return 1 - 0.45 * hard * low;
+    const hang = clamp((hangT - 4.5) / 2, 0, 1);
+    return (1 - 0.45 * hard * low) * (1 + 0.4 * hang);
   }
 
   function fieldingTarget() {
     return play && (play.catch || play.chase || play.field);
   }
 
-  // Where a fielder is drawn right now: at his spot, or running toward the ball
+  // Where a fielder is drawn right now: at his spot, running toward the ball, or wherever
+  // the throw-back left him (he then jogs home)
   function fielderPos(f) {
+    if (displaced.has(f)) return displaced.get(f);
     const home = fielderHome(f);
     const target = fieldingTarget();
     if (!target || target.fielder !== f || !(mode === "inplay" || mode === "result")) return home;
@@ -246,6 +255,135 @@
       ? d * clamp((play.airT - f.react) / Math.max(0.1, target.t - f.react), 0, 1)
       : Math.min(d, Math.max(0, play.airT - f.react) * f.speed);
     return { x: home.x + (dx / d) * run, y: home.y + (dy / d) * run };
+  }
+
+  // ---- Throwing the ball back in, like batting practice ----
+  // Outfielders hit the nearest infielder as a cutoff; infielders and the catcher throw to the pitcher.
+  const PITCHER_GLOVE = { x: 1.2, y: MOUND_Y - 1.5 };
+  const CATCHER_HAND = { x: 0, y: MITT_Y };
+  const JOG_SPEED = 14; // ft/s, fielders heading back to their spots
+
+  function holderPos(who) {
+    if (who === "P") return PITCHER_GLOVE;
+    if (who === "C") return CATCHER_HAND;
+    return fielderPos(who);
+  }
+
+  function nearestFielder(x, y, list) {
+    let best = null;
+    for (const f of list) {
+      const p = fielderPos(f);
+      const d = Math.hypot(x - p.x, y - p.y);
+      if (!best || d < best.d) best = { f, d };
+    }
+    return best.f;
+  }
+
+  // Once the ball is dead, decide who brings it back in
+  function startReturn() {
+    for (const f of FIELDERS) {
+      const p = fielderPos(f);
+      displaced.set(f, { x: p.x, y: p.y });
+    }
+    if (!play) {
+      // Missed or taken pitch: the catcher throws it back
+      ret = { phase: "hold", holder: "C", legs: ["P"], t: 0 };
+      ball = { x: CATCHER_HAND.x, y: CATCHER_HAND.y, z: 3, vx: 0, vy: 0, vz: 0, phase: "held" };
+      return;
+    }
+    // Home runs and balls in the stands or behind the plate: the pitcher takes a new ball
+    if (play.decided === "hr" || !inField(ball.x, ball.y) || ball.y < 10) {
+      ret = { phase: "done", t: 0, newBall: true };
+      ball = null;
+      return;
+    }
+    let holder, phase = "hold";
+    if (play.decided === "out") holder = play.catch.fielder;
+    else if (play.fielded) holder = play.field.fielder;
+    else {
+      holder = nearestFielder(ball.x, ball.y, FIELDERS);
+      phase = "fetch";
+    }
+    const legs = OUTFIELDERS.includes(holder) ? [nearestFielder(ball.x, ball.y, INFIELDERS), "P"] : ["P"];
+    ret = { phase, holder, legs, t: 0 };
+  }
+
+  function throwTo(target) {
+    const from = holderPos(ret.holder), to = holderPos(target);
+    const d = Math.hypot(to.x - from.x, to.y - from.y);
+    const speed = ret.holder === "C" ? 75 : OUTFIELDERS.includes(ret.holder) ? 125 : 100;
+    Object.assign(ret, {
+      phase: "throw",
+      from: { x: from.x, y: from.y, z: ball.z },
+      target,
+      dur: Math.max(0.4, d / speed),
+      peak: Math.min(30, d * 0.07),
+      holder: null,
+      t: 0,
+      steps: 0,
+    });
+    trail = [];
+    Sfx.throwBall();
+  }
+
+  function stepReturn(dt) {
+    ret.t += dt;
+    if (ret.phase === "fetch") {
+      const p = displaced.get(ret.holder);
+      const dx = ball.x - p.x, dy = ball.y - p.y, d = Math.hypot(dx, dy);
+      const step = ret.holder.speed * 1.2 * dt;
+      if (d <= step) {
+        p.x = ball.x;
+        p.y = ball.y;
+        ret.phase = "hold";
+        ret.t = 0;
+      } else {
+        p.x += (dx / d) * step;
+        p.y += (dy / d) * step;
+      }
+    } else if (ret.phase === "hold") {
+      const p = holderPos(ret.holder);
+      Object.assign(ball, { x: p.x, y: p.y, z: ret.holder === "C" ? 3 : 4 });
+      if (ret.t >= 0.35) throwTo(ret.legs.shift());
+    } else if (ret.phase === "throw") {
+      const u = Math.min(1, ret.t / ret.dur);
+      const to = holderPos(ret.target); // follow the receiver so it ends in his glove
+      ball.x = lerp(ret.from.x, to.x, u);
+      ball.y = lerp(ret.from.y, to.y, u);
+      ball.z = lerp(ret.from.z, 5, u) + ret.peak * 4 * u * (1 - u);
+      if (++ret.steps % 3 === 0) {
+        trail.push({ x: ball.x, y: ball.y, z: ball.z });
+        if (trail.length > 30) trail.shift();
+      }
+      if (u >= 1) {
+        Sfx.glove();
+        trail = [];
+        if (ret.target === "P") {
+          ret = { phase: "done", t: 0 };
+          ball = null;
+        } else {
+          ret.holder = ret.target;
+          ret.target = null;
+          ret.phase = "hold";
+          ret.t = 0;
+        }
+      }
+    }
+  }
+
+  // Fielders not handling the ball jog back to their spots
+  function walkHome(dt) {
+    for (const [f, p] of displaced) {
+      if (ret && (f === ret.holder || f === ret.target)) continue;
+      const h = fielderHome(f);
+      const dx = h.x - p.x, dy = h.y - p.y, d = Math.hypot(dx, dy);
+      const step = JOG_SPEED * dt;
+      if (d <= step) displaced.delete(f);
+      else {
+        p.x += (dx / d) * step;
+        p.y += (dy / d) * step;
+      }
+    }
   }
 
   // ---- Game state ----
@@ -263,6 +401,8 @@
   let pitch = null;
   let ball = null;
   let play = null;
+  let ret = null; // ball being thrown back to the pitcher
+  const displaced = new Map(); // fielder -> where he is while away from his spot
   let swingT = -1; // time since swing started, -1 = in stance
   let trail = [];
   let banner = null;
@@ -271,6 +411,21 @@
   let lastZone = null;
   let lastTiming = null;
   let paused = false;
+
+  // Pitch heights come from a shuffled bag (two low, two middle, two high), so the three
+  // rows of the strike zone even out over a round instead of streaking
+  const BALL_CHANCE = 0.12; // share of pitches thrown above or below the zone
+  let rowBag = [];
+  function nextRow() {
+    if (!rowBag.length) {
+      rowBag = [-1, -1, 0, 0, 1, 1];
+      for (let i = rowBag.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [rowBag[i], rowBag[j]] = [rowBag[j], rowBag[i]];
+      }
+    }
+    return rowBag.pop();
+  }
 
   function newPitch() {
     const types = [
@@ -281,9 +436,17 @@
     const type = types[Math.floor(Math.random() * types.length)];
     const mph = Math.round(type.mph + rand(-2, 2));
     const hBase = [-1, 0, 1][Math.floor(Math.random() * 3)];
-    const vBase = [-1, 0, 1][Math.floor(Math.random() * 3)];
     const h = hBase + rand(-0.35, 0.35);
-    const v = vBase + rand(-0.35, 0.35);
+    let vBase, v;
+    if (Math.random() < BALL_CHANCE) {
+      // A pitch that misses up or down, outside the zone (doesn't use up a row from the bag)
+      vBase = Math.random() < 0.5 ? -1 : 1;
+      v = vBase * rand(1.2, 1.45);
+    } else {
+      // Stays inside its row of the strike zone
+      vBase = nextRow();
+      v = vBase === 0 ? rand(-0.35, 0.35) : vBase * rand(0.6, 1.05);
+    }
     const hName = ["Inside", "Middle", "Outside"][hBase + 1];
     const vName = ["Low", "Middle", "High"][vBase + 1];
     const where = hBase === 0 && vBase === 0 ? "Down the middle" : `${vName}-${hName}`;
@@ -292,6 +455,7 @@
       h,
       v,
       label: `${type.name} · ${where} · ${mph} mph`,
+      row: Math.abs(v) <= 1.1 ? vBase : null, // bag row, handed back if the pitch is re-aimed
       side: handSide(),
       xp: handSide() * h * 0.75 * HOME_SCALE, // "inside" is toward the batter's box
       zp: 2.5 + v * 0.9,
@@ -330,13 +494,16 @@
     round.score = 0;
     round.pitch = 0;
     round.longest = 0;
-    round.counts = { hr: 0, wall: 0, line: 0, outfield: 0, gap: 0, flyout: 0, out: 0, foul: 0, strike: 0, ball: 0 };
+    round.counts = { hr: 0, wall: 0, line: 0, ofgap: 0, outfield: 0, gap: 0, flyout: 0, out: 0, foul: 0, strike: 0, ball: 0 };
     banner = null;
     scorePop = null;
     particles = [];
     fireworkTimer = 0;
     lastZone = null;
     lastTiming = null;
+    ret = null;
+    displaced.clear();
+    rowBag = [];
     Sfx.stopFlight();
     updateHud();
     startReady();
@@ -354,6 +521,7 @@
     banner = null;
     ball = null;
     play = null;
+    ret = null;
     Sfx.roundOver();
     updateHud();
     setMode("roundover");
@@ -375,7 +543,10 @@
     if (mode === "title" || mode === "roundover" || mode === "result" || mode === "ready") {
       applyHand(next);
       // A pitch that hasn't been thrown yet is re-aimed for the new side
-      if (mode === "ready") pitch = newPitch();
+      if (mode === "ready") {
+        if (pitch.row !== null) rowBag.push(pitch.row);
+        pitch = newPitch();
+      }
       if (mode !== "title" && mode !== "roundover") showBanner(`BATTING ${word}`, "", "#ffffff");
     } else {
       pendingHand = next === batterHand ? null : next;
@@ -388,6 +559,7 @@
     pitch = newPitch();
     ball = null;
     play = null;
+    ret = null;
     trail = [];
     swingT = -1;
     setMode("ready");
@@ -492,12 +664,14 @@
       chase: null,
       field: null, // grounder an infielder will field
       fielded: false,
-      rangeK: rangeFactor(ev, launch), // outfield range on this ball, as a share of the full circle
+      rangeK: 1, // outfield range on this ball, as a share of the full circle
     };
     lastZone = { h: p.h, v: p.v, color: "#5fdc7a" };
     Sfx.hit(quality);
 
+    displaced.clear(); // everyone is set for the new ball
     const sim = presim(ball);
+    play.rangeK = rangeFactor(ev, launch, sim.t);
     play.catch = findCatch(sim);
     if (!play.catch) play.chase = findChaser(sim);
     play.field = findFielder(ball);
@@ -709,7 +883,8 @@
     if (!f) return { zone: null, label: "OUT" };
     const d = toDeg(angleOf(f.x, f.y));
     if (f.dist >= OUTFIELD_R) {
-      const zone = Math.abs(d) >= LINE_DEG ? "line" : "outfield";
+      const gapper = play.ev >= GAP_EV && f.dist >= OF_GAP_R && OF_GAPS.some(([a, b]) => d >= a && d <= b);
+      const zone = Math.abs(d) >= LINE_DEG ? "line" : gapper ? "ofgap" : "outfield";
       return { zone, label: ZONES[zone].label };
     }
     // Short ball nobody could reach: dropped in front of the outfielders
@@ -816,6 +991,7 @@
     if (swingT >= 0) swingT += dt;
     if (banner) banner.t += dt;
     if (scorePop) scorePop.t += dt;
+    walkHome(dt);
 
     switch (mode) {
       case "ready":
@@ -850,8 +1026,14 @@
         }
         break;
       case "result":
-        if (play && ball && ball.phase !== "stopped") stepBall(dt);
-        if (modeT > resultDur) {
+        // Let the ball finish rolling, then the fielders throw it back to the pitcher
+        if (!ret) {
+          if (play && ball && ball.phase !== "stopped") stepBall(dt);
+          else startReturn();
+        } else if (ret.phase !== "done") stepReturn(dt);
+        else ret.t += dt;
+        // Next pitch once the banner has shown and the pitcher has had the ball a moment
+        if ((modeT > resultDur && ret && ret.phase === "done" && ret.t >= (ret.newBall ? 0.6 : 0.3)) || modeT > 25) {
           if (round.pitch >= PITCHES_PER_ROUND) endRound();
           else startReady();
         }
@@ -1070,6 +1252,7 @@
     const lineDeg = toDeg(FOUL_ANGLE);
 
     shade(OUTFIELD_R, track, -LINE_DEG, LINE_DEG, ZONES.outfield.shade);
+    for (const [a, b] of OF_GAPS) shade(OF_GAP_R, track, a, b, ZONES.ofgap.shade);
     shade(ZONE_INNER_R, track, -lineDeg, -LINE_DEG, ZONES.line.shade);
     shade(ZONE_INNER_R, track, LINE_DEG, lineDeg, ZONES.line.shade);
     for (const [a, b] of GAPS) shade(ZONE_INNER_R, OUTFIELD_R, a, b, ZONES.gap.shade);
@@ -1084,18 +1267,31 @@
     ctx.arc(0, 0, OUTFIELD_R, Math.PI / 2 - rad(LINE_DEG), Math.PI / 2 + rad(LINE_DEG));
     ctx.stroke();
 
-    // Fielder ranges: a fly ball landing inside an outfielder's circle is caught
-    for (const f of FIELDERS) {
+    // Infielders' rough range is always shown
+    for (const f of INFIELDERS) {
       const p = fielderHome(f);
-      ctx.fillStyle = OUTFIELDERS.includes(f) ? "rgba(0,0,0,0.16)" : "rgba(0,0,0,0.08)";
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
       circle(p.x, p.y, f.ring);
       ctx.fill();
       ctx.strokeStyle = "rgba(255,255,255,0.3)";
       ctx.stroke();
-      // On a hard liner, show how far the outfielder's range has shrunk
-      if (play && play.rangeK < 0.97 && OUTFIELDERS.includes(f) && (mode === "inplay" || mode === "result")) {
-        circle(p.x, p.y, f.ring * play.rangeK);
-        ctx.strokeStyle = "rgba(255,210,120,0.75)";
+    }
+
+    // Outfielders' circles only appear once the ball is hit. They then grow (high fly, sky blue)
+    // or shrink (hard liner, gold) to this ball's exact range: land inside one and it's caught.
+    if (play && (mode === "inplay" || mode === "result")) {
+      const grow = Math.min(1, play.airT / 0.4);
+      const k = lerp(1, play.rangeK, 1 - (1 - grow) * (1 - grow));
+      const changed = Math.abs(play.rangeK - 1) > 0.03;
+      const edge = !changed ? "rgba(255,255,255,0.45)" : play.rangeK < 1 ? "rgba(255,210,120,0.85)" : "rgba(140,210,255,0.9)";
+      const fill = !changed ? "rgba(0,0,0,0.16)" : play.rangeK < 1 ? "rgba(255,190,90,0.14)" : "rgba(120,190,255,0.16)";
+      ctx.lineWidth = 2 * px;
+      for (const f of OUTFIELDERS) {
+        const p = fielderHome(f);
+        circle(p.x, p.y, f.ring * k);
+        ctx.fillStyle = fill;
+        ctx.fill();
+        ctx.strokeStyle = edge;
         ctx.stroke();
       }
     }
@@ -1108,12 +1304,18 @@
     const s = Math.max(3, 11 * px); // stay visible when zoomed far out
     for (const f of FIELDERS) {
       const p = fielderPos(f);
-      const caught = play && ((play.decided === "out" && play.catch.fielder === f) || (play.fielded && play.field.fielder === f));
-      // Face home while waiting, face the ball while running
+      const caught = ret
+        ? ret.phase === "hold" && ret.holder === f
+        : play && ((play.decided === "out" && play.catch.fielder === f) || (play.fielded && play.field.fielder === f));
+      // Face home while waiting, the ball while running, and his throwing target while holding it
       const target = fieldingTarget();
-      const a = target && target.fielder === f && (mode === "inplay" || mode === "result")
-        ? Math.atan2(target.y - p.y, target.x - p.x)
-        : Math.atan2(-p.y, -p.x);
+      let a;
+      if (caught && ret) {
+        const t = holderPos(ret.legs[0]);
+        a = Math.atan2(t.y - p.y, t.x - p.x);
+      } else if (ret && ball) a = Math.atan2(ball.y - p.y, ball.x - p.x);
+      else if (target && target.fielder === f && (mode === "inplay" || mode === "result")) a = Math.atan2(target.y - p.y, target.x - p.x);
+      else a = Math.atan2(-p.y, -p.x);
       const glove = { x: p.x + Math.cos(a + 0.7) * s * 0.9, y: p.y + Math.sin(a + 0.7) * s * 0.9 };
       blob(p.x, p.y, s * 0.75, s * 0.75, 0, "rgba(244,244,244,0.92)", "#2d5fa8");
       blob(glove.x, glove.y, s * 0.32, s * 0.32, 0, "#6b3f1f");
@@ -1140,7 +1342,8 @@
     };
     const lineMid = (LINE_DEG + toDeg(FOUL_ANGLE)) / 2;
     for (const [a, b] of GAPS) label(112, (a + b) / 2, `+${ZONES.gap.pts}`, ZONES.gap.color);
-    for (const d of [-14, 14]) label(205, d, `+${ZONES.outfield.pts}`, ZONES.outfield.color);
+    for (const d of [-14, 14]) label(185, d, `+${ZONES.outfield.pts}`, ZONES.outfield.color);
+    for (const [a, b] of OF_GAPS) label(330, (a + b) / 2, `+${ZONES.ofgap.pts}`, ZONES.ofgap.color);
     for (const s of [-1, 1]) label(230, s * lineMid, `+${ZONES.line.pts}`, ZONES.line.color);
     for (const d of [-33, 33]) label((th) => wallDist(th) - 7.5, d, `+${ZONES.wall.pts}`, ZONES.wall.color, 12);
     for (const d of [-30, 0, 30]) label((th) => wallDist(th) + 22, d, `+${ZONES.hr.pts}`, ZONES.hr.color, 16);
@@ -1269,7 +1472,8 @@
     blob(k.cx, k.cy, 0.1, 0.1, 0, "#f2c94c");
 
     // Ball in hand before release
-    if (mode === "ready" || mode === "windup") blob(hand.x, hand.y, 0.13, 0.13, 0, "#fff", "#c0392b");
+    const hasBall = mode === "ready" || mode === "windup" || (mode === "result" && ret && ret.phase === "done");
+    if (hasBall) blob(hand.x, hand.y, 0.13, 0.13, 0, "#fff", "#c0392b");
   }
 
   function drawCatcher() {
@@ -1445,8 +1649,8 @@
       ctx.stroke();
     }
 
-    // Caught: the fielder's glove shows the ball instead
-    if (play && (play.decided === "out" || play.fielded)) return;
+    // Held by a fielder: his glove shows the ball instead
+    if (ret ? ret.phase === "hold" && ret.holder !== "C" : play && (play.decided === "out" || play.fielded)) return;
 
     // Shadow stays on the ground
     const z = Math.max(0, ball.z);
@@ -1567,7 +1771,7 @@
     ctx.globalAlpha = 1;
   }
 
-  const LEGEND = ["gap", "outfield", "line", "wall", "hr"];
+  const LEGEND = ["gap", "outfield", "ofgap", "line", "wall", "hr"];
 
   // Round, score, pitches, and a color key for the scoring zones
   function drawScoreboard() {

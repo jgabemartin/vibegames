@@ -29,6 +29,7 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 - Each pitch is random:
   - **Speed:** slow (about 70 mph), medium (about 82 mph) or fast (about 95 mph).
   - **Location:** one of nine spots, inside/middle/outside × high/middle/low, with a little variation.
+  - **Height is balanced:** high, middle and low strikes come up equally often over a round, about six of each. Separately, about one pitch in eight misses above or below the zone for a ball.
 - The HUD under the field names the pitch once it's thrown, for example "Fast · High-Inside · 94 mph".
 - You get **one swing per pitch**.
 - If you don't swing, a pitch in the strike zone is a **called strike** and one outside it is a **ball**. Neither scores points.
@@ -74,6 +75,7 @@ The field is shaded to show what each kind of hit is worth:
 |------|-------|--------|----------------|
 | Infield gap | Blue | +2 | A ground ball that gets between two infielders, or a short ball in the air that drops in before the outfield (a "blooper") |
 | Base hit | Light green | +3 | A ball in the air that lands in the outfield without being caught |
+| Gapper | Purple | +5 | A hard-hit ball (100+ mph off the bat) that drops in deep, more than 230 ft out, between LF and CF or between CF and RF |
 | Down the line | Yellow | +5 | A hit within about 8° of the first- or third-base line, past the infield |
 | Off the wall | Orange | +6 | The ball hits the outfield wall on the fly, or bounces over it (a ground-rule double) |
 | Home run | Red | +10 | The ball clears the 10-ft wall in fair territory without bouncing |
@@ -92,25 +94,47 @@ Seven imaginary fielders play defense:
 - **Infield:** 3B, SS, 2B and 1B.
 - **Outfield:** LF, CF and RF.
 
-The shaded circles with dashed edges show each fielder's range. The three outfield circles are darker and exact: a ball in the air that lands inside one is caught, and one that lands outside all of them is a hit. There's no pitcher or catcher fielding. All outs score **0 points**:
+The shaded circles with dashed edges show each fielder's range. The infield circles are always shown. The three outfield circles only appear once the ball is hit. They then grow or shrink to that ball's exact range: a ball in the air that lands inside one is caught, and one that lands outside all of them is a hit. There's no pitcher or catcher fielding. All outs score **0 points**:
 
 - **Ground out:** a ground ball hit toward an infielder. He moves over to the ball's path and the ball stops in his glove.
 - **Infield out:** a ground ball that stops before it gets past the infielders.
 - **Fly out, line out or pop out:** a fielder catches the ball in the air.
   - **Outfielders** catch any ball that would land inside their circle.
-  - **Hard, low line drives shrink that circle.** The harder the ball is hit (above about 85 mph) and the flatter it's hit (below about 30°), the less time the outfielders have to react. A 110 mph liner cuts their range to just over half. While the ball is in the air, a gold ring shows the smaller range.
+  - **Hard, low line drives shrink that circle.** The harder the ball is hit (above about 85 mph) and the flatter it's hit (below about 30°), the less time the outfielders have to react. A 110 mph liner cuts their range to just over half. The circles shrink and turn gold as the ball leaves the bat.
+  - **High flies that hang in the air grow that circle.** A ball that stays up longer than about 4.5 seconds gives the outfielders time to run farther, up to 40% more range at 6.5 seconds or more. The circles expand and turn sky blue as the ball leaves the bat.
   - **Infielders** catch short balls in the air (landing within about 150 ft) if they can run there in time. Each reacts in about half a second, then runs about 18–20 ft/s, so the longer a pop-up hangs, the more ground they cover.
 - **Easy out:** a short ball in the air that comes down within about 75 ft of home.
 
 A ball that reaches the wall or goes over it can't be caught.
 
+### Throwing the ball back
+
+As in real batting practice, the ball comes back in after every pitch:
+
+- A fielder who caught or fielded the ball already has it. Otherwise the nearest fielder runs to it.
+- **Outfielders** throw to the nearest infielder, who relays it to the pitcher.
+- **Infielders** throw straight to the pitcher.
+- On a **miss or a taken pitch**, the catcher throws it back.
+- Home runs and balls into the stands or the backstop aren't chased. The pitcher just takes a new ball.
+- The next pitch comes once the pitcher has the ball and a short pause has passed. Fielders jog back to their spots.
+
 ### Tips
 
+- Hard line drives shrink the outfielders' circles and open up the purple gaps for +5.
 - Aim for the open grass between, in front of, or behind the outfielders' circles. High fly balls are usually caught. Line drives and well-placed grounders are more reliable ways to score.
 - Hitting the ball straight up the middle sends it toward CF. Swing a little early or late to aim for the gaps and the lines.
 - Middle-high pitches hit squarely are your best chance at the wall or a home run.
 
 ## Change log
+
+### 1.6: Throwing the ball back and more range on high flies
+
+- Fielders now throw every ball back to the pitcher. Outfielders relay through the nearest infielder, infielders throw straight to the mound, and the catcher returns missed and taken pitches. The next pitch waits until the pitcher has the ball. Throws and catches have their own sounds.
+- The outfield range circles are hidden until the ball is hit. Then they expand (sky blue) for high flies or shrink (gold) for hard liners.
+- New +5 "Gapper" zone (purple): a 100+ mph ball that drops in deep between LF and CF or between CF and RF.
+- High, middle and low strikes are now evenly spread over each round. High and low pitches stay inside the zone, and about one pitch in eight is a deliberate ball above or below it.
+
+- Fly balls that hang in the air longer than about 4.5 seconds now grow the outfielders' range, by up to 40%. A sky-blue ring shows the bigger range while the ball is in play.
 
 ### 1.5: Infielders field grounders
 

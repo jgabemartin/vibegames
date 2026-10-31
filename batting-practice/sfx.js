@@ -206,6 +206,19 @@ const Sfx = (() => {
     tone("sine", 300, 120, 0.07, 0.3);
   }
 
+  // Soft whoosh of a fielder's throw
+  function throwBall() {
+    if (!ready()) return;
+    sweep("bandpass", 600, 1800, 0.18, 0.16, 0.05);
+  }
+
+  // Lighter leather pop when a fielder or the pitcher catches a throw
+  function glove() {
+    if (!ready()) return;
+    noise("bandpass", 1500, 0.05, 0.4, 0, 1.2);
+    tone("sine", 280, 130, 0.06, 0.16);
+  }
+
   // Little descending "aww" for a foul ball
   function foul() {
     if (!ready()) return;
@@ -248,5 +261,5 @@ const Sfx = (() => {
     });
   }
 
-  return { unlock, toggleMute, setPaused, roundOver, pitchRelease,swing, hit, ballFlight, stopFlight, groundImpact, wallHit, catcherMitt, foul, homeRun };
+  return { unlock, toggleMute, setPaused, roundOver, pitchRelease,swing, hit, ballFlight, stopFlight, groundImpact, wallHit, catcherMitt, throwBall, glove, foul, homeRun };
 })();
