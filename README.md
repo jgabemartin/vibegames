@@ -4,7 +4,7 @@ repo for vibe-coded games
 ## Games
 
 - [platformer-game](platformer-game/): **SkidRoller**, a browser BMX platformer with three levels (Day, Sunset and Night), each ending in a boss fight, plus five weather zones, SuperHop double jumps, music and sound effects. See [its README](platformer-game/README.md) for controls and details.
-- [batting-practice](batting-practice/): **Batting Practice**, a top-down baseball hitting game. Time your swing with Space as pitches come in at different speeds and locations, then watch the ball fly, bounce and roll, whether it's a grounder, a foul or a home run. Includes sound effects. See [its README](batting-practice/README.md) for controls and details.
+- [batting-practice](batting-practice/): **Batting Practice**, a top-down baseball hitting game. Time your swing with Space to place hits away from seven fielders. Each round is 20 pitches, and points come from shaded zones: infield gaps, outfield hits, down the line, off the wall and home runs. Includes sound effects. See [its README](batting-practice/README.md) for controls and details.
 
 ## How to play
 

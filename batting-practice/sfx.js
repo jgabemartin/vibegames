@@ -229,5 +229,15 @@ const Sfx = (() => {
     });
   }
 
-  return { unlock, toggleMute, setPaused,pitchRelease, swing, hit, ballFlight, stopFlight, groundImpact, wallHit, catcherMitt, foul, homeRun };
+  // Ballpark organ "charge" riff when a round ends
+  function roundOver() {
+    if (!ready()) return;
+    [392, 523, 659, 784, 659, 784].forEach((f, i) => {
+      const last = i === 5;
+      tone("square", f, f, last ? 0.6 : 0.14, 0.09, i * 0.15 + (last ? 0.1 : 0));
+      tone("triangle", f / 2, f / 2, last ? 0.6 : 0.14, 0.08, i * 0.15 + (last ? 0.1 : 0));
+    });
+  }
+
+  return { unlock, toggleMute, setPaused, roundOver, pitchRelease,swing, hit, ballFlight, stopFlight, groundImpact, wallHit, catcherMitt, foul, homeRun };
 })();

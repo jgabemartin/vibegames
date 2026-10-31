@@ -33,19 +33,51 @@
     { x: 0, y: 127.28 },
     { x: -63.64, y: 63.64 },
   ];
-  const ROLL_DECEL = { grass: 14, dirt: 18, track: 24 };
+  const ROLL_DECEL = { grass: 22, dirt: 26, track: 32 };
   const BOUNCE = { grass: 0.32, dirt: 0.38, track: 0.36 };
+
+  // ---- Scoring zones ----
+  // Angles are degrees from straight-away center (negative = left field).
+  const PITCHES_PER_ROUND = 20;
+  const OUTFIELD_R = 150; // fly balls landing beyond this are outfield hits
+  const INFIELD_CHECK_R = 120; // grounders are judged where they pass the infielders
+  const ZONE_INNER_R = 75; // shaded infield zones start beyond the mound
+  const LINE_DEG = 37; // within 8° of a foul line counts as down the line
+  const FIELDER_DEG = 6; // each imaginary infielder covers ±6°
+  // Imaginary fielders. Grounders are judged by the infielders' angles; balls in the air are
+  // caught by whoever can run to the spot before it comes down (reaction time + running speed).
+  const INFIELDERS = [
+    { name: "3B", deg: -31, r: 100, speed: 19, react: 0.45, ring: 22 },
+    { name: "SS", deg: -12, r: 140, speed: 20, react: 0.45, ring: 22 },
+    { name: "2B", deg: 12, r: 140, speed: 20, react: 0.45, ring: 22 },
+    { name: "1B", deg: 31, r: 100, speed: 18, react: 0.45, ring: 22 },
+  ];
+  const OUTFIELDERS = [
+    { name: "LF", deg: -27, r: 280, speed: 25, react: 0.5, ring: 55 },
+    { name: "CF", deg: 0, r: 310, speed: 27, react: 0.5, ring: 55 },
+    { name: "RF", deg: 27, r: 280, speed: 25, react: 0.5, ring: 55 },
+  ];
+  const FIELDERS = [...INFIELDERS, ...OUTFIELDERS];
+  const CATCH_Z = 5; // fielders catch the ball as it comes down through this height
+  const GAPS = [[-25, -18], [-6, 6], [18, 25]];
+  const ZONES = {
+    gap: { label: "IN THE GAP", name: "Infield gap", pts: 2, shade: "rgba(120,190,255,0.28)", color: "#8cc8ff" },
+    outfield: { label: "BASE HIT", name: "Base hit", pts: 3, shade: "rgba(255,255,255,0.10)", color: "#e4f5dc" },
+    line: { label: "DOWN THE LINE", name: "Down the line", pts: 5, shade: "rgba(255,214,102,0.30)", color: "#ffd666" },
+    wall: { label: "OFF THE WALL", name: "Off the wall", pts: 6, shade: "rgba(255,140,80,0.45)", color: "#ff9a5e" },
+    hr: { label: "HOME RUN!", name: "Home run", pts: 10, shade: "rgba(255,90,90,0.20)", color: "#ff6b6b" },
+  };
+  const BEST_KEY = "battingPractice.bestRound";
 
   const hud = {
     pitch: document.getElementById("pitch"),
     timing: document.getElementById("timing"),
     result: document.getElementById("result"),
-    hits: document.getElementById("hits"),
-    hrs: document.getElementById("hrs"),
-    fouls: document.getElementById("fouls"),
-    strikes: document.getElementById("strikes"),
-    balls: document.getElementById("balls"),
-    longest: document.getElementById("longest"),
+    round: document.getElementById("round"),
+    count: document.getElementById("count"),
+    score: document.getElementById("score"),
+    best: document.getElementById("best"),
+    history: document.getElementById("history"),
     sound: document.getElementById("sound"),
   };
 
@@ -54,6 +86,7 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
   const rad = (d) => (d * Math.PI) / 180;
+  const toDeg = (r) => (r * 180) / Math.PI;
   function gauss() {
     let u = 0;
     while (u === 0) u = Math.random();
@@ -110,10 +143,71 @@
     return "grass";
   }
 
+  // Which infield zone a direction falls in: down the line, an infielder's area, or a gap
+  function infieldZoneAt(d) {
+    if (Math.abs(d) >= LINE_DEG) return { kind: "line" };
+    const f = INFIELDERS.find((f) => Math.abs(d - f.deg) <= FIELDER_DEG);
+    return f ? { kind: "fielder", fielder: f } : { kind: "gap" };
+  }
+
+  function fielderHome(f) {
+    return polar(f.r, rad(f.deg));
+  }
+
+  // Can any fielder get under this ball in time? Picks whoever gets there first.
+  function findCatch(sim) {
+    if (play.launch < 10 || sim.reachesWall || !sim.catchPt) return null;
+    const c = sim.catchPt;
+    if (!isFair(sim.land.x, sim.land.y) || !inField(c.x, c.y)) return null;
+    let best = null;
+    for (const f of FIELDERS) {
+      const home = fielderHome(f);
+      const need = f.react + Math.hypot(c.x - home.x, c.y - home.y) / f.speed;
+      if (need <= c.t && (!best || need < best.need)) best = { fielder: f, need };
+    }
+    return best && { fielder: best.fielder, x: c.x, y: c.y, t: c.t };
+  }
+
+  // The fielder nearest the landing spot chases a ball he can't catch
+  function findChaser(sim) {
+    if (play.launch < 10 || !isFair(sim.land.x, sim.land.y)) return null;
+    let { x, y } = sim.land;
+    const r = Math.hypot(x, y), wd = wallDist(angleOf(x, y));
+    if (r > wd - 4) {
+      x *= (wd - 4) / r;
+      y *= (wd - 4) / r;
+    }
+    let best = null;
+    for (const f of OUTFIELDERS) {
+      const h = fielderHome(f);
+      const d = Math.hypot(x - h.x, y - h.y);
+      if (!best || d < best.d) best = { fielder: f, d };
+    }
+    return best && { fielder: best.fielder, x, y };
+  }
+
+  // Where a fielder is drawn right now: at his spot, or running toward the ball
+  function fielderPos(f) {
+    const home = fielderHome(f);
+    const target = play && (play.catch || play.chase);
+    if (!target || target.fielder !== f || !(mode === "inplay" || mode === "result")) return home;
+    const dx = target.x - home.x, dy = target.y - home.y;
+    const d = Math.hypot(dx, dy);
+    if (d < 0.01) return home;
+    const run = Math.min(d, Math.max(0, play.airT - f.react) * f.speed);
+    return { x: home.x + (dx / d) * run, y: home.y + (dy / d) * run };
+  }
+
   // ---- Game state ----
-  const stats = { hits: 0, hrs: 0, fouls: 0, strikes: 0, balls: 0, longest: 0 };
+  const round = { num: 0, score: 0, pitch: 0, counts: {}, longest: 0 };
+  const history = [];
+  let best = 0;
+  try {
+    best = Number(localStorage.getItem(BEST_KEY)) || 0;
+  } catch (e) { /* storage unavailable (e.g. file:// in some browsers) */ }
+  let scorePop = null; // floating "+N" on the scoreboard
   const cam = { ...IDLE_CAM };
-  let mode = "title"; // title, ready, windup, pitch, inplay, result
+  let mode = "title"; // title, ready, windup, pitch, inplay, result, roundover
   let modeT = 0;
   let resultDur = 2;
   let pitch = null;
@@ -180,6 +274,40 @@
     modeT = 0;
   }
 
+  function startRound() {
+    round.num++;
+    round.score = 0;
+    round.pitch = 0;
+    round.longest = 0;
+    round.counts = { hr: 0, wall: 0, line: 0, outfield: 0, gap: 0, flyout: 0, out: 0, foul: 0, strike: 0, ball: 0 };
+    banner = null;
+    scorePop = null;
+    particles = [];
+    fireworkTimer = 0;
+    lastZone = null;
+    lastTiming = null;
+    Sfx.stopFlight();
+    updateHud();
+    startReady();
+  }
+
+  function endRound() {
+    history.push(round.score);
+    round.newBest = round.score > best;
+    if (round.newBest) {
+      best = round.score;
+      try {
+        localStorage.setItem(BEST_KEY, String(best));
+      } catch (e) { /* ignore */ }
+    }
+    banner = null;
+    ball = null;
+    play = null;
+    Sfx.roundOver();
+    updateHud();
+    setMode("roundover");
+  }
+
   function startReady() {
     pitch = newPitch();
     ball = null;
@@ -194,6 +322,8 @@
     const pos = pitchPos(pitch, 0);
     ball = { ...pos, vx: 0, vy: 0, vz: 0, phase: "pitch" };
     hud.pitch.textContent = pitch.label;
+    round.pitch++;
+    updateHud();
     setMode("pitch");
   }
 
@@ -280,25 +410,34 @@
       steps: 0,
       endTimer: null,
       hrDist: 0,
+      airT: 0, // seconds since contact
+      catch: null,
+      chase: null,
     };
     lastZone = { h: p.h, v: p.v, color: "#5fdc7a" };
     Sfx.hit(quality);
 
     const sim = presim(ball);
-    if (launch > 4 && sim.t > 0.5) Sfx.ballFlight(sim.t, sim.apex / sim.t);
+    play.catch = findCatch(sim);
+    if (!play.catch) play.chase = findChaser(sim);
+    const flightT = play.catch ? play.catch.t : sim.t;
+    if (launch > 4 && flightT > 0.5) Sfx.ballFlight(flightT, Math.min(1, sim.apex / flightT));
     setMode("inplay");
   }
 
+  // Fly the ball ahead of time (same steps as the real flight) to find where it comes down
   function presim(b) {
     const s = { ...b };
-    let t = 0, apex = 0;
+    let t = 0, apex = 0, catchPt = null, reachesWall = false;
     while (t < 12) {
       airStep(s, STEP);
       t += STEP;
       if (!apex && s.vz <= 0) apex = t;
+      if (!catchPt && s.vz < 0 && s.z <= CATCH_Z) catchPt = { x: s.x, y: s.y, t };
+      if (!reachesWall && isFair(s.x, s.y) && Math.hypot(s.x, s.y) >= wallDist(angleOf(s.x, s.y))) reachesWall = true;
       if (s.z <= 0 && s.vz < 0) break;
     }
-    return { t, apex: apex || t / 2 };
+    return { t, apex: apex || t / 2, land: { x: s.x, y: s.y }, catchPt, reachesWall };
   }
 
   function airStep(b, dt) {
@@ -365,6 +504,22 @@
   }
 
   function stepBall(dt) {
+    play.airT += dt;
+    // A fielder gets under it: the ball stops in his glove
+    if (play.catch && ball.phase === "air" && play.airT >= play.catch.t - 1e-6) {
+      airStep(ball, dt);
+      ball.vx = ball.vy = ball.vz = 0;
+      ball.z = 0; // drawn tucked in at the fielder
+      ball.phase = "stopped";
+      play.decided = "out";
+      Sfx.stopFlight();
+      Sfx.catcherMitt();
+      return;
+    }
+    // Remember which way the ball was heading as it passed the infielders
+    if (!play.infieldCross && Math.hypot(ball.x, ball.y) >= INFIELD_CHECK_R) {
+      play.infieldCross = { deg: toDeg(angleOf(ball.x, ball.y)) };
+    }
     if (ball.phase === "air") {
       airStep(ball, dt);
       if (++play.steps % 3 === 0) {
@@ -430,40 +585,91 @@
     }
   }
 
+  // Decide which scoring zone a finished batted ball earned.
+  // Returns { zone, label } where zone is a ZONES key, or null for no points.
+  function scorePlay() {
+    if (play.decided === "out") {
+      const name = play.catch.fielder.name;
+      if (play.launch >= 50) return { zone: null, label: `POP OUT TO ${name}` };
+      if (play.launch < 22) return { zone: null, label: `LINED OUT TO ${name}` };
+      return { zone: null, label: `FLY OUT TO ${name}` };
+    }
+    if (play.decided === "hr") return { zone: "hr", label: ZONES.hr.label };
+    if (play.decided === "foul") return { zone: null, label: "FOUL BALL" };
+    // Only balls that reach the wall on the fly count; rollers to the wall are scored where they landed
+    if (play.wallFirst || play.groundRule) return { zone: "wall", label: ZONES.wall.label };
+
+    if (play.launch < 10) {
+      // Grounders count by where they got past the infielders
+      const c = play.infieldCross;
+      if (!c) return { zone: null, label: "INFIELD OUT" };
+      const z = infieldZoneAt(c.deg);
+      if (z.kind === "fielder") return { zone: null, label: `GROUNDED OUT TO ${z.fielder.name}` };
+      return { zone: z.kind, label: ZONES[z.kind].label };
+    }
+
+    // Balls in the air count by where they first land
+    const f = play.firstLand;
+    if (!f) return { zone: null, label: "OUT" };
+    const d = toDeg(angleOf(f.x, f.y));
+    if (f.dist >= OUTFIELD_R) {
+      const zone = Math.abs(d) >= LINE_DEG ? "line" : "outfield";
+      return { zone, label: ZONES[zone].label };
+    }
+    // Short ball nobody could reach: dropped in front of the outfielders
+    if (f.dist < ZONE_INNER_R) return { zone: null, label: "EASY OUT" };
+    const z = infieldZoneAt(d);
+    if (z.kind === "line") return { zone: "line", label: ZONES.line.label };
+    return { zone: "gap", label: z.kind === "fielder" ? "BLOOPER" : ZONES.gap.label };
+  }
+
+  function hitDescription(dist) {
+    if (play.groundRule) return "Ground-rule double";
+    if (play.launch < 10) return "Ground ball";
+    if (play.launch < 25) return "Line drive";
+    if (play.launch < 50) return dist > 300 ? "Deep fly ball" : "Fly ball";
+    return "Pop up";
+  }
+
+  function addScore(pts) {
+    round.score += pts;
+    if (pts > 0) scorePop = { pts, t: 0 };
+    updateHud();
+  }
+
   function finishPlay() {
     Sfx.stopFlight();
     if (!play.decided) decideByPosition();
-    let text = "";
-    let resultLabel = "";
+    const res = scorePlay();
+    const pts = res.zone ? ZONES[res.zone].pts : 0;
+    const ptsText = pts > 0 ? `+${pts}` : "No points";
+    let dist;
+
     if (play.decided === "hr") {
-      const dist = Math.round(play.hrDist || Math.hypot(ball.x, ball.y));
-      stats.hits++;
-      stats.hrs++;
-      stats.longest = Math.max(stats.longest, dist);
-      resultLabel = `Home run, ${dist} ft`;
-      if (banner) banner.sub = `${dist} ft`;
+      dist = Math.round(play.hrDist || Math.hypot(ball.x, ball.y));
+      if (banner) banner.sub = `+${pts} · ${dist} ft`;
       resultDur = 3.5;
     } else if (play.decided === "foul") {
-      stats.fouls++;
-      resultLabel = "Foul ball";
+      if (banner) banner.sub = ptsText;
       resultDur = 1.6;
     } else {
       const grounder = play.launch < 10;
-      const dist = Math.round(grounder || !play.firstLand ? Math.hypot(ball.x, ball.y) : play.firstLand.dist);
-      if (play.groundRule) text = "GROUND-RULE DOUBLE";
-      else if (play.wallFirst) text = "OFF THE WALL!";
-      else if (grounder) text = "GROUND BALL";
-      else if (play.launch < 25) text = "LINE DRIVE";
-      else if (play.launch < 50) text = dist > 300 ? "DEEP FLY BALL" : "FLY BALL";
-      else text = "POP UP";
-      stats.hits++;
-      stats.longest = Math.max(stats.longest, dist);
-      resultLabel = `${text.charAt(0) + text.slice(1).toLowerCase()}, ${dist} ft`;
-      showBanner(text, `${dist} ft · ${Math.round(play.ev)} mph off the bat`, "#ffffff");
+      dist = Math.round(grounder || !play.firstLand ? Math.hypot(ball.x, ball.y) : play.firstLand.dist);
+      const color = res.zone ? ZONES[res.zone].color : "#cfd3da";
+      showBanner(res.label, `${ptsText} · ${hitDescription(dist)}, ${dist} ft`, color);
       resultDur = 2.4;
     }
-    hud.result.textContent = resultLabel;
-    updateStats();
+
+    if (res.zone) round.counts[res.zone]++;
+    else if (play.decided === "foul") round.counts.foul++;
+    else if (play.decided === "out") round.counts.flyout++;
+    else round.counts.out++;
+    if (dist && play.decided !== "foul") round.longest = Math.max(round.longest, dist);
+
+    const label = (res.label.charAt(0) + res.label.slice(1).toLowerCase().replace("!", ""))
+      .replace(/\b(lf|cf|rf|ss|1b|2b|3b)\b/g, (m) => m.toUpperCase());
+    hud.result.textContent = `${label}${dist ? `, ${dist} ft` : ""} (${pts > 0 ? `+${pts}` : "0"})`;
+    addScore(pts);
     setMode("result");
   }
 
@@ -471,37 +677,36 @@
     Sfx.catcherMitt();
     ball = null;
     if (pitch.swung) {
-      stats.strikes++;
+      round.counts.strike++;
       showBanner("STRIKE!", "Swing and a miss", "#ff6b6b");
       hud.result.textContent = "Swinging strike";
       lastZone = { h: pitch.h, v: pitch.v, color: "#ff6b6b" };
     } else if (inZone(pitch)) {
-      stats.strikes++;
+      round.counts.strike++;
       showBanner("STRIKE!", "Caught looking", "#ff6b6b");
       hud.result.textContent = "Called strike";
       hud.timing.textContent = "No swing";
       lastTiming = null;
       lastZone = { h: pitch.h, v: pitch.v, color: "#ff6b6b" };
     } else {
-      stats.balls++;
+      round.counts.ball++;
       showBanner("BALL", "Good eye", "#8fd3ff");
       hud.result.textContent = "Ball";
       hud.timing.textContent = "No swing";
       lastTiming = null;
       lastZone = { h: pitch.h, v: pitch.v, color: "#8fd3ff" };
     }
-    updateStats();
+    updateHud();
     resultDur = 1.4;
     setMode("result");
   }
 
-  function updateStats() {
-    hud.hits.textContent = stats.hits;
-    hud.hrs.textContent = stats.hrs;
-    hud.fouls.textContent = stats.fouls;
-    hud.strikes.textContent = stats.strikes;
-    hud.balls.textContent = stats.balls;
-    hud.longest.textContent = stats.longest;
+  function updateHud() {
+    hud.round.textContent = round.num || "-";
+    hud.count.textContent = `${round.pitch} / ${PITCHES_PER_ROUND}`;
+    hud.score.textContent = round.score;
+    hud.best.textContent = best;
+    hud.history.textContent = history.length ? history.join(", ") : "--";
   }
 
   function showBanner(text, sub, color, big = false) {
@@ -513,6 +718,7 @@
     modeT += dt;
     if (swingT >= 0) swingT += dt;
     if (banner) banner.t += dt;
+    if (scorePop) scorePop.t += dt;
 
     switch (mode) {
       case "ready":
@@ -548,7 +754,10 @@
         break;
       case "result":
         if (play && ball && ball.phase !== "stopped") stepBall(dt);
-        if (modeT > resultDur) startReady();
+        if (modeT > resultDur) {
+          if (round.pitch >= PITCHES_PER_ROUND) endRound();
+          else startReady();
+        }
         break;
     }
   }
@@ -680,6 +889,8 @@
     ctx.fillStyle = "#fff";
     ctx.fillRect(-1, MOUND_Y - 0.25, 2, 0.5);
 
+    drawZones();
+
     // Foul lines
     ctx.strokeStyle = "#f4f4f4";
     ctx.lineWidth = Math.max(0.4, 1.5 * px);
@@ -728,6 +939,109 @@
     circle(rf.x, rf.y, Math.max(1.5, 3 * px));
     ctx.fill();
 
+  }
+
+  // Ring segment around home between two radii (or radius functions) and two angles in degrees
+  function wedgePath(r0, r1, d0, d1) {
+    const rAt = (r, th) => (typeof r === "function" ? r(th) : r);
+    const steps = Math.max(4, Math.ceil(Math.abs(d1 - d0) / 2));
+    ctx.beginPath();
+    for (let i = 0; i <= steps; i++) {
+      const th = rad(lerp(d0, d1, i / steps));
+      const p = polar(rAt(r1, th), th);
+      i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y);
+    }
+    for (let i = steps; i >= 0; i--) {
+      const th = rad(lerp(d0, d1, i / steps));
+      const p = polar(rAt(r0, th), th);
+      ctx.lineTo(p.x, p.y);
+    }
+    ctx.closePath();
+  }
+
+  function shade(r0, r1, d0, d1, color) {
+    wedgePath(r0, r1, d0, d1);
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  // Mild tints marking where each kind of hit scores
+  function drawZones() {
+    const px = 1 / cam.zoom;
+    const track = (th) => wallDist(th) - 15;
+    const beyond = (th) => wallDist(th) + 40;
+    const lineDeg = toDeg(FOUL_ANGLE);
+
+    shade(OUTFIELD_R, track, -LINE_DEG, LINE_DEG, ZONES.outfield.shade);
+    shade(ZONE_INNER_R, track, -lineDeg, -LINE_DEG, ZONES.line.shade);
+    shade(ZONE_INNER_R, track, LINE_DEG, lineDeg, ZONES.line.shade);
+    for (const [a, b] of GAPS) shade(ZONE_INNER_R, OUTFIELD_R, a, b, ZONES.gap.shade);
+    shade(track, wallDist, -lineDeg, lineDeg, ZONES.wall.shade);
+    shade(wallDist, beyond, -lineDeg, lineDeg, ZONES.hr.shade);
+
+    // Dashed edge between infield and outfield scoring
+    ctx.setLineDash([4 * px, 4 * px]);
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 1.2 * px;
+    ctx.beginPath();
+    ctx.arc(0, 0, OUTFIELD_R, Math.PI / 2 - rad(LINE_DEG), Math.PI / 2 + rad(LINE_DEG));
+    ctx.stroke();
+
+    // Rough range of each fielder on a typical fly ball (higher flies give them more time)
+    for (const f of FIELDERS) {
+      const p = fielderHome(f);
+      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      circle(p.x, p.y, f.ring);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(255,255,255,0.3)";
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+  }
+
+  // Simple top-down fielders in the home team's colors; they run toward the ball
+  function drawFielders() {
+    const px = 1 / cam.zoom;
+    const s = Math.max(3, 11 * px); // stay visible when zoomed far out
+    for (const f of FIELDERS) {
+      const p = fielderPos(f);
+      const caught = play && play.decided === "out" && play.catch.fielder === f;
+      // Face home while waiting, face the ball while running
+      const target = play && (play.catch || play.chase);
+      const a = target && target.fielder === f && (mode === "inplay" || mode === "result")
+        ? Math.atan2(target.y - p.y, target.x - p.x)
+        : Math.atan2(-p.y, -p.x);
+      const glove = { x: p.x + Math.cos(a + 0.7) * s * 0.9, y: p.y + Math.sin(a + 0.7) * s * 0.9 };
+      blob(p.x, p.y, s * 0.75, s * 0.75, 0, "rgba(244,244,244,0.92)", "#2d5fa8");
+      blob(glove.x, glove.y, s * 0.32, s * 0.32, 0, "#6b3f1f");
+      blob(p.x, p.y, s * 0.38, s * 0.38, 0, "#1d3c6e");
+      if (caught) blob(glove.x, glove.y, s * 0.2, s * 0.2, 0, "#fff", "#c0392b");
+    }
+  }
+
+  // Point values and fielder names, drawn in screen space so text stays upright
+  function drawZoneLabels() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const label = (r, d, text, color, size = 14) => {
+      const p = polar(typeof r === "function" ? r(rad(d)) : r, rad(d));
+      const s = toScreen(p.x, p.y);
+      if (s.x < -30 || s.x > W + 30 || s.y < -30 || s.y > H + 30) return;
+      ctx.font = `bold ${size}px Segoe UI, Arial`;
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.strokeText(text, s.x, s.y);
+      ctx.fillStyle = color;
+      ctx.fillText(text, s.x, s.y);
+    };
+    const lineMid = (LINE_DEG + toDeg(FOUL_ANGLE)) / 2;
+    for (const [a, b] of GAPS) label(112, (a + b) / 2, `+${ZONES.gap.pts}`, ZONES.gap.color);
+    for (const d of [-14, 14]) label(205, d, `+${ZONES.outfield.pts}`, ZONES.outfield.color);
+    for (const s of [-1, 1]) label(230, s * lineMid, `+${ZONES.line.pts}`, ZONES.line.color);
+    for (const d of [-33, 33]) label((th) => wallDist(th) - 7.5, d, `+${ZONES.wall.pts}`, ZONES.wall.color, 12);
+    for (const d of [-30, 0, 30]) label((th) => wallDist(th) + 22, d, `+${ZONES.hr.pts}`, ZONES.hr.color, 16);
+    for (const f of FIELDERS) label(f.r - f.ring * 0.55, f.deg, f.name, "rgba(255,255,255,0.7)", 10);
   }
 
   function drawWallLabels() {
@@ -1028,6 +1342,9 @@
       ctx.stroke();
     }
 
+    // Caught: the fielder's glove shows the ball instead
+    if (play && play.decided === "out") return;
+
     // Shadow stays on the ground
     const z = Math.max(0, ball.z);
     ctx.fillStyle = `rgba(0,0,0,${clamp(0.45 - z / 250, 0.12, 0.45)})`;
@@ -1145,6 +1462,110 @@
     ctx.globalAlpha = 1;
   }
 
+  const LEGEND = ["gap", "outfield", "line", "wall", "hr"];
+
+  // Round, score, pitches, and a color key for the scoring zones
+  function drawScoreboard() {
+    const x0 = 16, y0 = 16, w = 172, h = 86 + LEGEND.length * 18;
+    ctx.fillStyle = "rgba(10,12,20,0.6)";
+    ctx.fillRect(x0, y0, w, h);
+    ctx.textBaseline = "top";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#ddd";
+    ctx.font = "11px Segoe UI, Arial";
+    ctx.fillText(`ROUND ${round.num || "-"}`, x0 + 10, y0 + 8);
+    ctx.textAlign = "right";
+    ctx.fillText(`PITCH ${round.pitch} / ${PITCHES_PER_ROUND}`, x0 + w - 10, y0 + 8);
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 30px Segoe UI, Arial";
+    ctx.fillText(round.score, x0 + 10, y0 + 24);
+    ctx.fillStyle = "#aaa";
+    ctx.font = "11px Segoe UI, Arial";
+    ctx.textAlign = "right";
+    ctx.fillText(`BEST ${best}`, x0 + w - 10, y0 + 38);
+
+    // Floating "+N" right after scoring
+    if (scorePop && scorePop.t < 1.4) {
+      ctx.globalAlpha = clamp(1.4 - scorePop.t, 0, 1);
+      ctx.fillStyle = "#7dff8a";
+      ctx.font = "bold 20px Segoe UI, Arial";
+      ctx.textAlign = "left";
+      ctx.fillText(`+${scorePop.pts}`, x0 + 70, y0 + 30 - scorePop.t * 14);
+      ctx.globalAlpha = 1;
+    }
+
+    // Pitches remaining as dots
+    for (let i = 0; i < PITCHES_PER_ROUND; i++) {
+      ctx.fillStyle = i < round.pitch ? "rgba(255,255,255,0.2)" : "#f2c94c";
+      circle(x0 + 12 + i * 7.9, y0 + 66, 2.6);
+      ctx.fill();
+    }
+
+    ctx.textAlign = "left";
+    ctx.font = "12px Segoe UI, Arial";
+    LEGEND.forEach((key, i) => {
+      const z = ZONES[key];
+      const y = y0 + 80 + i * 18;
+      ctx.fillStyle = z.color;
+      ctx.fillRect(x0 + 10, y + 2, 12, 12);
+      ctx.fillStyle = "#eee";
+      ctx.fillText(z.name, x0 + 30, y + 1);
+      ctx.textAlign = "right";
+      ctx.fillText(`+${z.pts}`, x0 + w - 10, y + 1);
+      ctx.textAlign = "left";
+    });
+  }
+
+  function drawRoundOver() {
+    ctx.fillStyle = "rgba(10,12,20,0.72)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 40px Segoe UI, Arial";
+    ctx.fillText(`ROUND ${round.num} COMPLETE`, W / 2, 110);
+    ctx.font = "bold 72px Segoe UI, Arial";
+    ctx.fillStyle = round.newBest ? "#ffd666" : "#fff";
+    ctx.fillText(round.score, W / 2, 190);
+    ctx.font = "16px Segoe UI, Arial";
+    ctx.fillStyle = "#ccc";
+    ctx.fillText(round.newBest ? "NEW BEST ROUND!" : `Best round: ${best}`, W / 2, 242);
+
+    // Breakdown by zone
+    const rows = LEGEND.slice().reverse().map((k) => ({
+      name: ZONES[k].name, color: ZONES[k].color, n: round.counts[k], pts: round.counts[k] * ZONES[k].pts,
+    }));
+    const c = round.counts;
+    rows.push({ name: "Caught (fly / line / pop outs)", color: "#8a8f99", n: c.flyout, pts: 0 });
+    rows.push({ name: "Ground outs", color: "#8a8f99", n: c.out, pts: 0 });
+    rows.push({ name: "Fouls", color: "#8a8f99", n: c.foul, pts: 0 });
+    rows.push({ name: "Strikes / balls", color: "#8a8f99", n: `${c.strike} / ${c.ball}`, pts: 0 });
+    ctx.font = "15px Segoe UI, Arial";
+    rows.forEach((r, i) => {
+      const y = 290 + i * 24;
+      ctx.fillStyle = r.color;
+      ctx.fillRect(W / 2 - 170, y - 6, 12, 12);
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#eee";
+      ctx.fillText(r.name, W / 2 - 150, y);
+      ctx.textAlign = "right";
+      ctx.fillText(`× ${r.n}`, W / 2 + 90, y);
+      ctx.fillText(r.pts ? `${r.pts} pts` : "-", W / 2 + 170, y);
+    });
+
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#aaa";
+    ctx.font = "14px Segoe UI, Arial";
+    if (round.longest) ctx.fillText(`Longest hit: ${round.longest} ft`, W / 2, 290 + rows.length * 24 + 8);
+    if (history.length > 1) ctx.fillText(`Rounds so far: ${history.join(", ")}`, W / 2, 290 + rows.length * 24 + 30);
+    if (modeT > 1) {
+      ctx.fillStyle = "#fff";
+      ctx.font = "bold 18px Segoe UI, Arial";
+      ctx.fillText("Press Space for the next round", W / 2, H - 40);
+    }
+  }
+
   function drawTitle() {
     ctx.fillStyle = "rgba(10,12,20,0.6)";
     ctx.fillRect(0, 0, W, H);
@@ -1152,12 +1573,13 @@
     ctx.textBaseline = "middle";
     ctx.fillStyle = "#fff";
     ctx.font = "bold 54px Segoe UI, Arial";
-    ctx.fillText("BATTING PRACTICE", W / 2, H / 2 - 50);
+    ctx.fillText("BATTING PRACTICE", W / 2, H / 2 - 60);
     ctx.font = "20px Segoe UI, Arial";
-    ctx.fillText("Press Space to step into the box", W / 2, H / 2 + 10);
+    ctx.fillText("Press Space to step into the box", W / 2, H / 2);
     ctx.font = "15px Segoe UI, Arial";
     ctx.fillStyle = "#ccc";
-    ctx.fillText("Space = swing   ·   early pulls, late pushes   ·   low = grounders, high = fly balls", W / 2, H / 2 + 48);
+    ctx.fillText(`${PITCHES_PER_ROUND} pitches per round. Score by placing hits in the shaded zones.`, W / 2, H / 2 + 38);
+    ctx.fillText("Space = swing   ·   early pulls, late pushes   ·   low = grounders, high = fly balls", W / 2, H / 2 + 62);
   }
 
   function render() {
@@ -1168,13 +1590,17 @@
     drawPitcher();
     drawCatcher();
     drawBatter();
+    drawFielders();
     drawBall();
+    drawZoneLabels();
     drawWallLabels();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     drawZoneInset();
+    drawScoreboard();
     drawParticles();
     drawBanner();
     if (mode === "title") drawTitle();
+    if (mode === "roundover") drawRoundOver();
     if (paused) drawPaused();
   }
 
@@ -1229,21 +1655,25 @@
       e.preventDefault();
       if (e.repeat || paused) return;
       Sfx.unlock();
-      if (mode === "title") startReady();
-      else trySwing(performance.now());
+      if (mode === "title") startRound();
+      else if (mode === "roundover") {
+        if (modeT > 1) startRound(); // short delay so a late swing doesn't skip the summary
+      } else trySwing(performance.now());
     } else if (e.code === "KeyM") {
       Sfx.unlock();
       hud.sound.textContent = Sfx.toggleMute() ? "Off" : "On";
     } else if (e.code === "KeyP") {
       setPaused(!paused);
     } else if (e.code === "KeyR") {
-      Object.keys(stats).forEach((k) => (stats[k] = 0));
-      updateStats();
+      // Restart the current round from pitch 1
+      if (mode === "title" || paused) return;
+      round.num--;
+      startRound();
     }
   });
   // Pause automatically when the tab or window loses focus
   window.addEventListener("blur", () => setPaused(true));
 
-  updateStats();
+  updateHud();
   requestAnimationFrame(frame);
 })();
