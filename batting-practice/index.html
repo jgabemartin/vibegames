@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Batting Practice</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-wrap">
+    <h1>Batting Practice</h1>
+    <canvas id="game" width="960" height="640"></canvas>
+    <p id="hud">
+      Pitch: <span id="pitch">--</span> &nbsp;|&nbsp;
+      Timing: <span id="timing">--</span> &nbsp;|&nbsp;
+      Result: <span id="result">--</span>
+    </p>
+    <p id="stats">
+      Hits: <span id="hits">0</span> &nbsp;|&nbsp;
+      HR: <span id="hrs">0</span> &nbsp;|&nbsp;
+      Fouls: <span id="fouls">0</span> &nbsp;|&nbsp;
+      Strikes: <span id="strikes">0</span> &nbsp;|&nbsp;
+      Balls: <span id="balls">0</span> &nbsp;|&nbsp;
+      Longest: <span id="longest">0</span> ft &nbsp;|&nbsp;
+      Sound: <span id="sound">On</span>
+    </p>
+    <p id="instructions">Space to swing (press Space to start). Time your swing to the pitch — early pulls to left, late pushes to right. Low pitches go on the ground, high pitches go in the air. P to pause, M to mute, R to reset stats.</p>
+  </div>
+  <script src="sfx.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
