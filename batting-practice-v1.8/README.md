@@ -89,7 +89,7 @@ The field is shaded to show what each kind of hit is worth:
 
 | Zone | Color | Points | How to earn it |
 |------|-------|--------|----------------|
-| Infield gap | Blue | +2 | A ground ball that gets between two infielders, or a short ball in the air that drops in before the outfield (a "blooper") |
+| Hole in the infield | Blue | +2 | A ground ball that gets between two infielders, or a short ball in the air that drops in before the outfield (a "blooper") |
 | Base hit | Light green | +3 | A ball in the air that lands in the outfield without being caught |
 | Gapper | Purple | +5 | A hard-hit ball (100+ mph off the bat) that drops in deep, more than 230 ft out, between LF and CF or between CF and RF |
 | Down the line | Yellow | +5 | A hit within about 8° of the first- or third-base line, past the infield |
@@ -148,6 +148,7 @@ As in real batting practice, the ball comes back in after every pitch:
 
 - Each round now picks its own share of middle-height strikes, anywhere from 50% to 75%. The rest are split evenly between high and low.
 - The hit stats label the angle as "exit angle".
+- The +2 infield zone is renamed from "Infield gap" to "Hole in the infield".
 - The build number appears in the game: in the browser tab, the page heading, the title screen and the bottom-left corner of the field. The folder and the script and style files now carry the version in their names (`batting-practice-v1.8`, `game-v1.8.js`, `sfx-v1.8.js`, `style-v1.8.css`).
 
 ### 1.7: Hit stats, batting average and counting only real swings

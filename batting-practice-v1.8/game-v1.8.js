@@ -66,7 +66,7 @@
   const OF_GAP_R = 230; // gap zone starts this deep
   const GAP_EV = 100; // mph off the bat to count as hard hit
   const ZONES = {
-    gap: { label: "IN THE GAP", name: "Infield gap", pts: 2, shade: "rgba(120,190,255,0.28)", color: "#8cc8ff" },
+    gap: { label: "HOLE IN THE INFIELD", name: "Hole in the infield", pts: 2, shade: "rgba(120,190,255,0.28)", color: "#8cc8ff" },
     outfield: { label: "BASE HIT", name: "Base hit", pts: 3, shade: "rgba(255,255,255,0.10)", color: "#e4f5dc" },
     ofgap: { label: "SPLIT THE GAP", name: "Gapper (hard hit)", pts: 5, shade: "rgba(190,140,255,0.22)", color: "#c9a2ff" },
     line: { label: "DOWN THE LINE", name: "Down the line", pts: 5, shade: "rgba(255,214,102,0.30)", color: "#ffd666" },
