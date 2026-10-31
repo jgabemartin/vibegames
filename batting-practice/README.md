@@ -35,7 +35,7 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 - **Batting average** = hits ÷ fair balls put in play (hits plus outs). Fouls, misses and taken pitches don't count. It shows on the scoreboard during the round and on the summary at the end.
 - After every batted ball, the banner and the HUD show:
   - the **exit velocity**, how hard the ball came off the bat in mph
-  - the **launch angle** in degrees
+  - the **exit angle** in degrees, the angle the ball leaves the bat. It's labeled "exit angle", for example "102 mph · exit angle 18° · 3.4 s hang".
   - the **hang time**, the seconds until the ball first came down. Hang time is left off for ground balls.
 - Your best round is saved in the browser and kept between visits.
 - Pressing **R** restarts the current round from pitch 1. The round you abandoned isn't recorded.
@@ -45,7 +45,7 @@ Open `index.html` in a browser. Nothing to install and no server needed.
 - Each pitch is random:
   - **Speed:** slow (about 70 mph), medium (about 82 mph) or fast (about 95 mph).
   - **Location:** one of nine spots, inside/middle/outside × high/middle/low, with a little variation.
-  - **Mostly middle height:** 75% of strikes are middle height, 12.5% high and 12.5% low, which gives you more hittable pitches. Every stretch of eight strikes has exactly six middle, one high and one low. Separately, about one pitch in eight misses above or below the zone for a ball.
+  - **Mostly middle height, varying by round:** each round picks a share of middle-height strikes between 50% and 75%. The rest are split evenly between high and low. Some rounds give you plenty of hittable pitches and others make you work for them. Separately, about one pitch in eight misses above or below the zone for a ball.
 - The HUD under the field names the pitch once it's thrown, for example "Fast · High-Inside · 94 mph".
 - You get **one swing per pitch**.
 - If you don't swing, a pitch in the strike zone is a **called strike** and one outside it is a **ball**. Neither scores points.
@@ -143,6 +143,10 @@ As in real batting practice, the ball comes back in after every pitch:
 - Middle-high pitches hit squarely are your best chance at the wall or a home run.
 
 ## Change log
+
+### 1.8: Pitch mix varies by round
+
+- Each round now picks its own share of middle-height strikes, anywhere from 50% to 75%. The rest are split evenly between high and low.
 
 ### 1.7: Hit stats, batting average and counting only real swings
 

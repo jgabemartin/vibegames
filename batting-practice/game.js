@@ -414,13 +414,20 @@
   let lastTiming = null;
   let paused = false;
 
-  // Pitch heights come from a shuffled bag of eight: six middle, one high, one low
-  // (75% / 12.5% / 12.5%), so every stretch of eight strikes has exactly that mix
+  // Pitch heights come from a shuffled bag of 20. Each round picks its own share of middle-height
+  // strikes between 50% and 75%; the rest are split evenly between high and low.
   const BALL_CHANCE = 0.12; // share of pitches thrown above or below the zone
+  const MID_SHARE = [0.5, 0.75];
+  let midShare = 0.75;
   let rowBag = [];
   function nextRow() {
     if (!rowBag.length) {
-      rowBag = [-1, 0, 0, 0, 0, 0, 0, 1];
+      const n = 20;
+      const mid = Math.round(n * midShare);
+      let high = Math.floor((n - mid) / 2);
+      if ((n - mid) % 2 && Math.random() < 0.5) high++;
+      const low = n - mid - high;
+      rowBag = [...Array(low).fill(-1), ...Array(mid).fill(0), ...Array(high).fill(1)];
       for (let i = rowBag.length - 1; i > 0; i--) {
         const j = Math.floor(Math.random() * (i + 1));
         [rowBag[i], rowBag[j]] = [rowBag[j], rowBag[i]];
@@ -506,6 +513,7 @@
     ret = null;
     displaced.clear();
     rowBag = [];
+    midShare = rand(MID_SHARE[0], MID_SHARE[1]); // this round's share of middle-height strikes
     Sfx.stopFlight();
     updateHud();
     startReady();
@@ -936,7 +944,7 @@
       resultDur = 2.4;
     }
     // Exit velocity, launch angle and hang time (ground balls have no real hang time)
-    const stats = `${Math.round(play.ev)} mph · ${Math.round(play.launch)}°` +
+    const stats = `${Math.round(play.ev)} mph · exit angle ${Math.round(play.launch)}°` +
       (play.launch >= 10 && play.hang ? ` · ${play.hang.toFixed(1)} s hang` : "");
     if (banner) banner.stats = stats;
 
