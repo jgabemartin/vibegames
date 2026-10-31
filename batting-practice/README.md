@@ -92,22 +92,32 @@ Seven imaginary fielders play defense:
 - **Infield:** 3B, SS, 2B and 1B.
 - **Outfield:** LF, CF and RF.
 
-The dashed circles show where each one starts and roughly how much ground they cover. There's no pitcher or catcher fielding. All outs score **0 points**:
+The shaded circles with dashed edges show each fielder's range. The three outfield circles are darker and exact: a ball in the air that lands inside one is caught, and one that lands outside all of them is a hit. There's no pitcher or catcher fielding. All outs score **0 points**:
 
-- **Ground out:** a ground ball hit toward an infielder.
+- **Ground out:** a ground ball hit toward an infielder. He moves over to the ball's path and the ball stops in his glove.
 - **Infield out:** a ground ball that stops before it gets past the infielders.
-- **Fly out, line out or pop out:** a fielder catches the ball in the air. When the ball is hit, each fielder reacts (about half a second) and then runs at his own speed: about 18–20 ft/s for infielders and 25–27 ft/s for outfielders. If someone can reach the spot before the ball comes down, he catches it, so the longer the ball stays up, the more ground the fielders cover.
+- **Fly out, line out or pop out:** a fielder catches the ball in the air.
+  - **Outfielders** catch any ball that would land inside their circle.
+  - **Hard, low line drives shrink that circle.** The harder the ball is hit (above about 85 mph) and the flatter it's hit (below about 30°), the less time the outfielders have to react. A 110 mph liner cuts their range to just over half. While the ball is in the air, a gold ring shows the smaller range.
+  - **Infielders** catch short balls in the air (landing within about 150 ft) if they can run there in time. Each reacts in about half a second, then runs about 18–20 ft/s, so the longer a pop-up hangs, the more ground they cover.
 - **Easy out:** a short ball in the air that comes down within about 75 ft of home.
 
 A ball that reaches the wall or goes over it can't be caught.
 
 ### Tips
 
-- High fly balls are usually caught. Line drives and well-placed grounders are more reliable ways to score.
+- Aim for the open grass between, in front of, or behind the outfielders' circles. High fly balls are usually caught. Line drives and well-placed grounders are more reliable ways to score.
 - Hitting the ball straight up the middle sends it toward CF. Swing a little early or late to aim for the gaps and the lines.
 - Middle-high pitches hit squarely are your best chance at the wall or a home run.
 
 ## Change log
+
+### 1.5: Infielders field grounders
+
+- A ground ball hit at an infielder now stops in his glove instead of rolling on through him.
+- The outfielders' shaded circles are now their exact range. A ball in the air that lands inside one is caught, and anything outside them is a hit. The circles are larger (75 ft) and darker so they're easier to see.
+- Outfielders pace their run so they reach the ball just as it comes down.
+- Hard, low line drives shrink the outfielders' range, down to about 55% for the hardest liners. A gold ring shows the smaller range while that ball is in play.
 
 ### 1.4: Left-handed batting and louder hits
 

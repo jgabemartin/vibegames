@@ -53,9 +53,9 @@
     { name: "1B", deg: 31, r: 100, speed: 18, react: 0.45, ring: 22 },
   ];
   const OUTFIELDERS = [
-    { name: "LF", deg: -27, r: 280, speed: 25, react: 0.5, ring: 55 },
-    { name: "CF", deg: 0, r: 310, speed: 27, react: 0.5, ring: 55 },
-    { name: "RF", deg: 27, r: 280, speed: 25, react: 0.5, ring: 55 },
+    { name: "LF", deg: -27, r: 280, speed: 25, react: 0.5, ring: 75 },
+    { name: "CF", deg: 0, r: 310, speed: 27, react: 0.5, ring: 75 },
+    { name: "RF", deg: 27, r: 280, speed: 25, react: 0.5, ring: 75 },
   ];
   const FIELDERS = [...INFIELDERS, ...OUTFIELDERS];
   const CATCH_Z = 5; // fielders catch the ball as it comes down through this height
@@ -168,13 +168,21 @@
     return polar(f.r, rad(f.deg));
   }
 
-  // Can any fielder get under this ball in time? Picks whoever gets there first.
+  // Who catches this ball, if anyone. Outfielders catch exactly the balls that land inside
+  // their shaded range circles. Infielders handle short balls by whether they can run there in time.
   function findCatch(sim) {
     if (play.launch < 10 || sim.reachesWall || !sim.catchPt) return null;
-    const c = sim.catchPt;
-    if (!isFair(sim.land.x, sim.land.y) || !inField(c.x, c.y)) return null;
+    const c = sim.catchPt, land = sim.land;
+    if (!isFair(land.x, land.y) || !inField(c.x, c.y)) return null;
     let best = null;
-    for (const f of FIELDERS) {
+    for (const f of OUTFIELDERS) {
+      const home = fielderHome(f);
+      const d = Math.hypot(land.x - home.x, land.y - home.y);
+      if (d <= f.ring * play.rangeK && (!best || d < best.d)) best = { fielder: f, d };
+    }
+    if (best) return { fielder: best.fielder, x: c.x, y: c.y, t: c.t };
+    if (Math.hypot(land.x, land.y) >= OUTFIELD_R) return null;
+    for (const f of INFIELDERS) {
       const home = fielderHome(f);
       const need = f.react + Math.hypot(c.x - home.x, c.y - home.y) / f.speed;
       if (need <= c.t && (!best || need < best.need)) best = { fielder: f, need };
@@ -200,15 +208,43 @@
     return best && { fielder: best.fielder, x, y };
   }
 
+  // A grounder hit into an infielder's area: he moves over to the ball's path and fields it there
+  function findFielder(b) {
+    if (play.launch >= 10) return null;
+    const d = toDeg(angleOf(b.vx, b.vy));
+    const z = infieldZoneAt(d);
+    if (z.kind !== "fielder") return null;
+    const home = fielderHome(z.fielder);
+    const ux = Math.sin(rad(d)), uy = Math.cos(rad(d));
+    const along = (home.x - b.x) * ux + (home.y - b.y) * uy;
+    return { fielder: z.fielder, x: b.x + ux * along, y: b.y + uy * along, along, x0: b.x, y0: b.y, ux, uy };
+  }
+
+  // Hard, low line drives give outfielders less time to react, shrinking their range
+  // to as little as 55% for a 110+ mph liner at a 10° launch
+  function rangeFactor(ev, launch) {
+    const hard = clamp((ev - 85) / 25, 0, 1);
+    const low = clamp((32 - launch) / 22, 0, 1);
+    return 1 - 0.45 * hard * low;
+  }
+
+  function fieldingTarget() {
+    return play && (play.catch || play.chase || play.field);
+  }
+
   // Where a fielder is drawn right now: at his spot, or running toward the ball
   function fielderPos(f) {
     const home = fielderHome(f);
-    const target = play && (play.catch || play.chase);
+    const target = fieldingTarget();
     if (!target || target.fielder !== f || !(mode === "inplay" || mode === "result")) return home;
+    if (play.fielded) return { x: target.x, y: target.y };
     const dx = target.x - home.x, dy = target.y - home.y;
     const d = Math.hypot(dx, dy);
     if (d < 0.01) return home;
-    const run = Math.min(d, Math.max(0, play.airT - f.react) * f.speed);
+    // A catcher paces his run to arrive as the ball comes down; a chaser just runs flat out
+    const run = target === play.catch
+      ? d * clamp((play.airT - f.react) / Math.max(0.1, target.t - f.react), 0, 1)
+      : Math.min(d, Math.max(0, play.airT - f.react) * f.speed);
     return { x: home.x + (dx / d) * run, y: home.y + (dy / d) * run };
   }
 
@@ -454,6 +490,9 @@
       airT: 0, // seconds since contact
       catch: null,
       chase: null,
+      field: null, // grounder an infielder will field
+      fielded: false,
+      rangeK: rangeFactor(ev, launch), // outfield range on this ball, as a share of the full circle
     };
     lastZone = { h: p.h, v: p.v, color: "#5fdc7a" };
     Sfx.hit(quality);
@@ -461,6 +500,7 @@
     const sim = presim(ball);
     play.catch = findCatch(sim);
     if (!play.catch) play.chase = findChaser(sim);
+    play.field = findFielder(ball);
     const flightT = play.catch ? play.catch.t : sim.t;
     if (launch > 4 && flightT > 0.5) Sfx.ballFlight(flightT, Math.min(1, sim.apex / flightT));
     setMode("inplay");
@@ -557,6 +597,20 @@
       Sfx.catcherMitt();
       return;
     }
+    // A grounder reaches the infielder playing it: it stops in his glove
+    const fd = play.field;
+    if (fd && (ball.x - fd.x0) * fd.ux + (ball.y - fd.y0) * fd.uy >= fd.along) {
+      ball.x = fd.x;
+      ball.y = fd.y;
+      ball.z = 0;
+      ball.vx = ball.vy = ball.vz = 0;
+      ball.phase = "stopped";
+      play.fielded = true;
+      if (!play.decided) play.decided = "fair";
+      Sfx.stopFlight();
+      Sfx.catcherMitt();
+      return;
+    }
     // Remember which way the ball was heading as it passed the infielders
     if (!play.infieldCross && Math.hypot(ball.x, ball.y) >= INFIELD_CHECK_R) {
       play.infieldCross = { deg: toDeg(angleOf(ball.x, ball.y)) };
@@ -640,6 +694,7 @@
     // Only balls that reach the wall on the fly count; rollers to the wall are scored where they landed
     if (play.wallFirst || play.groundRule) return { zone: "wall", label: ZONES.wall.label };
 
+    if (play.fielded) return { zone: null, label: `GROUNDED OUT TO ${play.field.fielder.name}` };
     if (play.launch < 10) {
       // Grounders count by where they got past the infielders
       const c = play.infieldCross;
@@ -1029,14 +1084,20 @@
     ctx.arc(0, 0, OUTFIELD_R, Math.PI / 2 - rad(LINE_DEG), Math.PI / 2 + rad(LINE_DEG));
     ctx.stroke();
 
-    // Rough range of each fielder on a typical fly ball (higher flies give them more time)
+    // Fielder ranges: a fly ball landing inside an outfielder's circle is caught
     for (const f of FIELDERS) {
       const p = fielderHome(f);
-      ctx.fillStyle = "rgba(0,0,0,0.08)";
+      ctx.fillStyle = OUTFIELDERS.includes(f) ? "rgba(0,0,0,0.16)" : "rgba(0,0,0,0.08)";
       circle(p.x, p.y, f.ring);
       ctx.fill();
       ctx.strokeStyle = "rgba(255,255,255,0.3)";
       ctx.stroke();
+      // On a hard liner, show how far the outfielder's range has shrunk
+      if (play && play.rangeK < 0.97 && OUTFIELDERS.includes(f) && (mode === "inplay" || mode === "result")) {
+        circle(p.x, p.y, f.ring * play.rangeK);
+        ctx.strokeStyle = "rgba(255,210,120,0.75)";
+        ctx.stroke();
+      }
     }
     ctx.setLineDash([]);
   }
@@ -1047,9 +1108,9 @@
     const s = Math.max(3, 11 * px); // stay visible when zoomed far out
     for (const f of FIELDERS) {
       const p = fielderPos(f);
-      const caught = play && play.decided === "out" && play.catch.fielder === f;
+      const caught = play && ((play.decided === "out" && play.catch.fielder === f) || (play.fielded && play.field.fielder === f));
       // Face home while waiting, face the ball while running
-      const target = play && (play.catch || play.chase);
+      const target = fieldingTarget();
       const a = target && target.fielder === f && (mode === "inplay" || mode === "result")
         ? Math.atan2(target.y - p.y, target.x - p.x)
         : Math.atan2(-p.y, -p.x);
@@ -1385,7 +1446,7 @@
     }
 
     // Caught: the fielder's glove shows the ball instead
-    if (play && play.decided === "out") return;
+    if (play && (play.decided === "out" || play.fielded)) return;
 
     // Shadow stays on the ground
     const z = Math.max(0, ball.z);
