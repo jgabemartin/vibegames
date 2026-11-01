@@ -6,6 +6,75 @@ const Sfx = (() => {
   let noiseBuffer = null;
   let muted = false;
   let flight = null;
+  let batHit = null; // decoded bat-hit.mp3
+  let batHitStart = 0; // seconds of leading silence to skip
+
+  let organ = null; // decoded organ-intro.mp3
+  let organWanted = false; // intro requested, waiting for the decode to finish
+  let organPlay = null; // { src, gain } while the intro is playing
+
+  // Decode an embedded base64 mp3 into a buffer
+  function decodeEmbedded(b64, onOk, onFail) {
+    const bin = atob(b64);
+    const bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    ctx.decodeAudioData(bytes.buffer, onOk, onFail);
+  }
+
+  // Decode the embedded bat-hit.mp3 (bat-hit-v1.9.js)
+  function loadBatHit() {
+    if (typeof BAT_HIT_MP3 === "undefined") return;
+    decodeEmbedded(BAT_HIT_MP3, buf => {
+      batHit = buf;
+      // Skip silence at the front so the crack lands right on contact
+      const d = buf.getChannelData(0);
+      let i = 0;
+      while (i < d.length && Math.abs(d[i]) < 0.02) i++;
+      batHitStart = Math.max(0, i / buf.sampleRate - 0.002);
+    }, () => {});
+  }
+
+  // Decode the embedded organ-intro.mp3 (organ-intro-v1.9.js)
+  function loadOrgan() {
+    if (typeof ORGAN_INTRO_MP3 === "undefined") return;
+    decodeEmbedded(ORGAN_INTRO_MP3, buf => {
+      organ = buf;
+      if (organWanted) playOrgan();
+    }, () => {});
+  }
+
+  function playOrgan() {
+    organWanted = false;
+    const src = ctx.createBufferSource();
+    src.buffer = organ;
+    const gain = ctx.createGain();
+    src.connect(gain).connect(master);
+    src.onended = () => {
+      if (organPlay && organPlay.src === src) organPlay = null;
+    };
+    src.start();
+    organPlay = { src, gain };
+  }
+
+  // Ballpark organ on the title screen. If the browser hasn't allowed audio
+  // yet, it starts from the top on the first click or key press.
+  function organIntro() {
+    if (!ready()) return;
+    if (organ) playOrgan();
+    else organWanted = true;
+  }
+
+  // Cut the organ short with a quick fade
+  function stopOrgan() {
+    organWanted = false;
+    if (!organPlay) return;
+    const { src, gain } = organPlay;
+    organPlay = null;
+    const t = ctx.currentTime;
+    gain.gain.setValueAtTime(gain.gain.value, t);
+    gain.gain.linearRampToValueAtTime(0, t + 0.25);
+    src.stop(t + 0.3);
+  }
 
   // Must be called from a user gesture so the browser lets audio start
   function unlock() {
@@ -27,12 +96,19 @@ const Sfx = (() => {
       noiseBuffer = ctx.createBuffer(1, len, ctx.sampleRate);
       const data = noiseBuffer.getChannelData(0);
       for (let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+      loadBatHit();
+      loadOrgan();
     }
     if (ctx.state === "suspended") ctx.resume();
   }
 
   function ready() {
     return !!ctx;
+  }
+
+  // False while the browser is holding audio until the player interacts
+  function audioRunning() {
+    return !ctx || ctx.state === "running";
   }
 
   function toggleMute() {
@@ -115,6 +191,18 @@ const Sfx = (() => {
   // Wooden crack; quality 0..1 makes it sharper and louder
   function hit(quality) {
     if (!ready()) return;
+    if (batHit) {
+      // Recorded bat crack: weak contact plays it lower and quieter
+      const src = ctx.createBufferSource();
+      src.buffer = batHit;
+      src.playbackRate.value = 0.82 + quality * 0.23;
+      const gain = ctx.createGain();
+      gain.gain.value = 0.55 + quality * 0.75;
+      src.connect(gain).connect(master);
+      src.start(ctx.currentTime, batHitStart);
+      return;
+    }
+    // Synthesized fallback until the recording has decoded
     if (quality > 0.45) {
       noise("highpass", 1800 + quality * 1800, 0.11, 0.9 + quality * 0.8);
       tone("square", 1900 + quality * 600, 1200, 0.06, 0.35 + quality * 0.25);
@@ -261,5 +349,5 @@ const Sfx = (() => {
     });
   }
 
-  return { unlock, toggleMute, setPaused, roundOver, pitchRelease,swing, hit, ballFlight, stopFlight, groundImpact, wallHit, catcherMitt, throwBall, glove, foul, homeRun };
+  return { unlock, audioRunning, toggleMute, setPaused, roundOver, organIntro, stopOrgan, pitchRelease,swing, hit, ballFlight, stopFlight, groundImpact, wallHit, catcherMitt, throwBall, glove, foul, homeRun };
 })();

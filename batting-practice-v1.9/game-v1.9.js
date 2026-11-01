@@ -3,7 +3,7 @@
   const ctx = canvas.getContext("2d");
   const W = canvas.width;
   const H = canvas.height;
-  const VERSION = "1.8"; // keep in step with the folder and file names and the README change log
+  const VERSION = "1.9"; // keep in step with the folder and file names and the README change log
 
   // ---- World constants (units: feet, seconds) ----
   // Home plate is the origin, +y points to center field, +x toward first base.
@@ -400,6 +400,9 @@
   const cam = { ...IDLE_CAM };
   let mode = "title"; // title, ready, windup, pitch, inplay, result, roundover
   let modeT = 0;
+  let titleT = 0; // seconds of intro played, drives the title text
+  let titleWait = 0; // seconds spent waiting for the browser to allow audio
+  let introStarted = false; // player has clicked or pressed a key
   let resultDur = 2;
   let pitch = null;
   let ball = null;
@@ -1893,27 +1896,71 @@
     ctx.fillText(`Batting ${batterHand === "R" ? "right" : "left"}-handed · H to switch`, W / 2, H - 16);
   }
 
+  // Title lines appear one after another while the organ plays (seconds)
+  const TITLE_REVEAL = { rules: 3.5, hand: 7, space: 10 };
+  const TITLE_FADE = 1.2; // seconds for each line to fade in
+
   function drawTitle() {
+    const t = titleT;
     ctx.fillStyle = "rgba(10,12,20,0.6)";
     ctx.fillRect(0, 0, W, H);
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillStyle = "#fff";
+
+    // Browser is holding audio: ask for a click or key before the intro
+    if (!introStarted && !Sfx.audioRunning()) {
+      if (titleWait > 0.3) {
+        ctx.globalAlpha = 0.7 + 0.3 * Math.sin(titleWait * 4);
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 26px Segoe UI, Arial";
+        ctx.fillText("Click or press any key to start", W / 2, H / 2);
+        ctx.globalAlpha = 1;
+      }
+      return;
+    }
+
+    // Game name flashes in, then holds steady
+    const flashing = t < 2.2;
+    const lit = !flashing || Math.floor(t / 0.18) % 2 === 0;
+    const pop = flashing ? 1 + 0.12 * (1 - t / 2.2) : 1;
+    ctx.save();
+    ctx.translate(W / 2, H / 2 - 90);
+    ctx.scale(pop, pop);
+    ctx.globalAlpha = lit ? 1 : 0.15;
+    ctx.fillStyle = flashing && lit ? "#ffd666" : "#fff";
     ctx.font = "bold 54px Segoe UI, Arial";
-    ctx.fillText("BATTING PRACTICE", W / 2, H / 2 - 60);
+    ctx.fillText("BATTING PRACTICE", 0, 0);
+    ctx.restore();
+    ctx.globalAlpha = lit ? 1 : 0.15;
     ctx.font = "bold 16px Segoe UI, Arial";
     ctx.fillStyle = "#9fe3ff";
-    ctx.fillText(`v${VERSION}`, W / 2, H / 2 - 26);
-    ctx.fillStyle = "#fff";
-    ctx.font = "20px Segoe UI, Arial";
-    ctx.fillText("Press Space to step into the box", W / 2, H / 2);
+    ctx.fillText(`v${VERSION}`, W / 2, H / 2 - 56);
+
+    // Each later line fades in and rises into place
+    const reveal = (start) => {
+      const k = clamp((t - start) / TITLE_FADE, 0, 1);
+      ctx.globalAlpha = k;
+      return (1 - k) * 12;
+    };
+
+    let dy = reveal(TITLE_REVEAL.rules);
     ctx.font = "15px Segoe UI, Arial";
     ctx.fillStyle = "#ccc";
-    ctx.fillText(`${PITCHES_PER_ROUND} pitches per round. Score by placing hits in the shaded zones.`, W / 2, H / 2 + 38);
-    ctx.fillText("Space = swing   ·   early pulls, late pushes   ·   low = grounders, high = fly balls", W / 2, H / 2 + 62);
+    ctx.fillText(`${PITCHES_PER_ROUND} pitches per round. Score by placing hits in the shaded zones.`, W / 2, H / 2 - 14 + dy);
+    ctx.fillText("Space = swing   ·   early pulls, late pushes   ·   low = grounders, high = fly balls", W / 2, H / 2 + 10 + dy);
+    ctx.fillText("H = switch sides   ·   P = pause   ·   M = mute   ·   R = restart round", W / 2, H / 2 + 34 + dy);
+
+    dy = reveal(TITLE_REVEAL.hand);
     ctx.fillStyle = "#ffd666";
     ctx.font = "bold 17px Segoe UI, Arial";
-    ctx.fillText(`Batting ${batterHand === "R" ? "RIGHT" : "LEFT"}-handed   ·   press H to switch`, W / 2, H / 2 + 104);
+    ctx.fillText(`Batting ${batterHand === "R" ? "RIGHT" : "LEFT"}-handed   ·   press H to switch`, W / 2, H / 2 + 76 + dy);
+
+    dy = reveal(TITLE_REVEAL.space);
+    if (t > TITLE_REVEAL.space + TITLE_FADE) ctx.globalAlpha = 0.75 + 0.25 * Math.sin((t - TITLE_REVEAL.space) * 4);
+    ctx.fillStyle = "#fff";
+    ctx.font = "bold 22px Segoe UI, Arial";
+    ctx.fillText("Press Space to step into the box", W / 2, H / 2 + 124 + dy);
+    ctx.globalAlpha = 1;
   }
 
   function render() {
@@ -1985,6 +2032,9 @@
     acc += dt;
     while (acc >= STEP) {
       if (mode !== "title") update(STEP);
+      // Title text waits for the organ when the browser is holding audio
+      else if (introStarted || Sfx.audioRunning()) titleT += STEP;
+      else titleWait += STEP;
       acc -= STEP;
     }
     simWallTime = now - acc * 1000;
@@ -1998,8 +2048,14 @@
     if (e.code === "Space") {
       e.preventDefault();
       if (e.repeat || paused) return;
+      // While audio is blocked, the first Space starts the organ intro instead
+      const gated = mode === "title" && !introStarted && !Sfx.audioRunning();
       Sfx.unlock();
-      if (mode === "title") startRound();
+      if (gated) introStarted = true;
+      else if (mode === "title") {
+        Sfx.stopOrgan();
+        startRound();
+      }
       else if (mode === "roundover") {
         if (modeT > 1) startRound(); // short delay so a late swing doesn't skip the summary
       } else trySwing(performance.now());
@@ -2019,6 +2075,17 @@
   });
   // Pause automatically when the tab or window loses focus
   window.addEventListener("blur", () => setPaused(true));
+
+  // Organ plays as soon as the page loads. Browsers often hold audio until the
+  // first click or key press; the organ then starts from the top.
+  Sfx.unlock();
+  Sfx.organIntro();
+  const allowAudio = () => {
+    Sfx.unlock();
+    introStarted = true;
+  };
+  window.addEventListener("pointerdown", allowAudio);
+  window.addEventListener("keydown", allowAudio);
 
   updateHud();
   requestAnimationFrame(frame);

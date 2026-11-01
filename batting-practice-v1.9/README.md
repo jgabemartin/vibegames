@@ -1,10 +1,12 @@
-# Batting Practice v1.8
+# Batting Practice v1.9
 
 A top-down baseball hitting game. Step into the box, time your swing, and try to put the ball where the fielders aren't. Each round is 20 pitches. You score points by placing hits in the shaded zones on the field.
 
 ## How to play
 
 Open `index.html` in a browser. Nothing to install and no server needed.
+
+A ballpark organ plays while the title screen shows the game name, the rules and controls, and your batting side. If your browser is holding sound, the screen asks you to click or press a key first. Press Space whenever you're ready to step in. That stops the organ and starts the first round.
 
 | Key   | Action                              |
 |-------|-------------------------------------|
@@ -144,6 +146,18 @@ As in real batting practice, the ball comes back in after every pitch:
 
 ## Change log
 
+### 1.9: Organ intro and a recorded bat crack
+
+- A ballpark organ riff (about 14 seconds) plays when the page opens. While it plays, the title screen builds up in steps:
+  - the game name flashes in
+  - then the rules and controls
+  - then the batting side
+  - then "Press Space to step into the box"
+- Most browsers hold sound until the first click or key press. When that happens, the title screen shows "Click or press any key to start", and the organ and the title sequence begin together on that press.
+- Space stops the organ with a quick fade and starts the game right away. Otherwise the organ plays to the end.
+- Contact now plays a recorded wooden bat crack in place of the synthesized one. Weaker contact plays it lower and quieter.
+- Both recordings are stored inside script files so they play when `index.html` is opened straight from disk.
+
 ### 1.8: Pitch mix varies by round
 
 - Each round now picks its own share of middle-height strikes, anywhere from 50% to 75%. The rest are split evenly between high and low.
@@ -217,8 +231,17 @@ As in real batting practice, the ball comes back in after every pitch:
 ## Files
 
 - `index.html`: page layout and the HUD under the field
-- `game-v1.8.js`: game flow, ball physics, fielders, scoring, camera and drawing
-- `sfx-v1.8.js`: sound effects made with the Web Audio API (no audio files)
-- `style-v1.8.css`: page styling
+- `game-v1.9.js`: game flow, title screen, ball physics, fielders, scoring, camera and drawing
+- `sfx-v1.9.js`: sound effects with the Web Audio API. All are made in code except the bat crack and the organ intro, which are recordings.
+- `bat-hit.mp3`: the recorded bat-on-ball crack
+- `organ-intro.mp3`: the ballpark organ that plays on the title screen
+- `bat-hit-v1.9.js`, `organ-intro-v1.9.js`: the same recordings stored as base64, so they still play when `index.html` is opened straight from disk (browsers block loading audio files from `file://` pages). If you replace an mp3, regenerate its file from it.
+- `style-v1.9.css`: page styling
 
-The folder and these file names include the version number. For a new version, rename them and update `VERSION` at the top of the game file, the `<title>`, heading and script/style links in `index.html`, and the link in the main README.
+The folder and the `-v1.9` file names include the version number. For a new version:
+
+- Rename the folder and those files.
+- Update `VERSION` at the top of the game file.
+- Update the `<title>`, heading and script/style links in `index.html`.
+- Update the file comments in `sfx-v1.9.js` that name the embedded-audio files.
+- Update the link in the main README.
