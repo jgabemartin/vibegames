@@ -1,3 +1,5 @@
+const VERSION = "1.5"; // keep in step with the folder and file names and the README change log
+
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
@@ -1994,6 +1996,17 @@ function drawPlatform(p) {
   else drawGroundPlatform(p);
 }
 
+// Game name and build number in the bottom-left corner
+function drawVersion() {
+  ctx.save();
+  ctx.textAlign = "left";
+  ctx.textBaseline = "bottom";
+  ctx.font = "12px Segoe UI, Arial";
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.fillText(`SkidRoller v${VERSION}`, 10, canvas.height - 8);
+  ctx.restore();
+}
+
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBackground();
@@ -2060,6 +2073,7 @@ function draw() {
 
   drawWeatherEffects();
   if (level.boss) drawBossBanner(level.boss);
+  drawVersion();
 
   // White flash from the big celebration explosion
   if (level.boss && level.boss.flash > 0.02) {
