@@ -1,4 +1,4 @@
-# SkyRaider v1.0
+# SkyRaider v1.1
 
 A World War I bombing run with 16-bit-style pixel art. Fly a biplane up the screen over farmland, the front-line trenches and army camps, and drop bombs on military targets. Where a bomb lands depends on where you are, when you let go, how high you fly and which way the wind is blowing. You have 60 seconds and 2 planes per run.
 
@@ -8,7 +8,7 @@ You don't need to install anything. The game is plain HTML, CSS and JavaScript, 
 
 1. Download [vibegames-main.zip](https://github.com/jgabemartin/vibegames/archive/refs/heads/main.zip), or click the green **Code** button on the repo page, then **Download ZIP**.
 2. Unzip it.
-3. Open the `skyraider-v1.0` folder and double-click `index.html`.
+3. Open the `skyraider-v1.1` folder and double-click `index.html`.
 
 Sound starts on your first key press, because browsers block audio until you interact with the page.
 
@@ -99,39 +99,38 @@ Sound starts on your first key press, because browsers block audio until you int
 
 ## Change log
 
+### 1.1: Bomb loads, plane damage, alarms and more recorded sounds
+
+- Bombs come in loads of 3 that drop as fast as you press Space. The load refills 3 seconds after the last drop, shown in a BOMB box by the altitude gauge.
+- A plane survives one flak hit and goes down on the second, with a damage meter and a smoke trail once it's hit.
+- An alarm and a flashing "ENEMY BASE AHEAD!" warning as each army camp comes into view.
+- An air-raid siren starts as you near each village and fades out once it's behind you.
+- Down climbs and Up dives, like pulling back and pushing forward on a flight stick.
+- Recorded engine sound: skips the clip's first 2 seconds of start-up and loops the rest, revving up as you climb.
+- Each flak shot, from a blimp or an AA gun, plays one of two recorded gunshots picked at random.
+
 ### 1.0: First release
 
 - Biplane bombing run over farmland, the front and army camps, with a new map every run.
 - Bombs keep the plane's forward speed and drift with the wind. Altitude sets the fall time and a score multiplier of up to x2.
-- Targets: trenches, trucks (some moving), tents, guns, ammo dumps with chain explosions, the bridge and blimp winches. Houses cost points.
-- A plane survives one flak hit and goes down on the second, with a damage meter and a smoke trail once it's hit.
-- An alarm and a flashing "ENEMY BASE AHEAD!" warning as each army camp comes into view.
-- Barrage blimps with mooring cables and flak gunners, and anti-aircraft guns that track the plane. Flak shells are shown flying to their burst.
 - A bombsight shows where a bomb would land in still air.
-- Loads of 3 bombs that drop as fast as you press Space. The load refills 3 seconds after the last drop, shown in a BOMB box by the altitude gauge.
+- Targets: trenches, trucks (some moving), tents, guns, ammo dumps with chain explosions, the bridge and blimp winches. Houses cost points.
+- Barrage blimps with mooring cables and flak gunners, and anti-aircraft guns that track the plane. Flak shells are shown flying to their burst.
 - 60-second runs with 2 planes, a plane bonus, a run summary and a saved best score.
-- Down climbs and Up dives, like pulling back and pushing forward on a flight stick.
 - Pixel art, a bitmap font, clouds, smoke and fire. The plane banks as it steers, lowering one wing and showing the side of the body, and tips its nose up to climb or down to dive.
-- Recorded sounds for the engine, the falling-bomb whistle, the explosions and the flak guns firing:
-  - The engine skips the clip's first 2 seconds of start-up and loops the rest, revving up as you climb.
-  - The whistle is timed to each fall.
-  - The explosions are three blasts picked at random, at a slightly different pitch each time.
-  - Each flak shot, from a blimp or an AA gun, is one of two gunshots picked at random.
-  - An alarm buzzes as each army camp comes into view.
-  - An air-raid siren starts as you near each village and fades out once it's behind you.
-- Other sound effects are made in code: flak, scoring chimes, bugle calls.
+- Recorded sounds for the falling-bomb whistle, timed to each fall, and the explosions: three blasts picked at random, at a slightly different pitch each time. Other sound effects are made in code: flak, scoring chimes, bugle calls.
 
 ## Files
 
 - `index.html`: page layout
-- `game-v1.0.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
-- `sprites-v1.0.js`: the color palette, pixel-art sprites and the bitmap font
-- `sfx-v1.0.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready
+- `game-v1.1.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
+- `sprites-v1.1.js`: the color palette, pixel-art sprites and the bitmap font
+- `sfx-v1.1.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready
 - `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`, `flak-fire-1.mp3`, `flak-fire-2.mp3`, `base-alarm.mp3`, `siren.mp3`: the recorded sounds
-- `engine-v1.0.js`, `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`, `flak-fire-1-v1.0.js`, `flak-fire-2-v1.0.js`, `base-alarm-v1.0.js`, `siren-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
-- `style-v1.0.css`: page styling
+- `engine-v1.1.js`, `bomb-whistle-v1.1.js`, `explosion-1-v1.1.js`, `explosion-2-v1.1.js`, `explosion-3-v1.1.js`, `flak-fire-1-v1.1.js`, `flak-fire-2-v1.1.js`, `base-alarm-v1.1.js`, `siren-v1.1.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
+- `style-v1.1.css`: page styling
 
-The folder and the `-v1.0` file names include the version number. For a new version:
+The folder and the `-v1.1` file names include the version number. For a new version:
 
 - Rename the folder and those files.
 - Update `VERSION` at the top of the game file.

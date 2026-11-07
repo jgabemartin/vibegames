@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.0"; // keep in step with the folder and file names and the README change log
+  const VERSION = "1.1"; // keep in step with the folder and file names and the README change log
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");

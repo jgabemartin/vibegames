@@ -1,7 +1,7 @@
 // SkyRaider sound effects, made with the Web Audio API. The engine, the bomb whistle, the
 // explosions, the flak guns firing and the camp alarm are recorded clips embedded as base64
-// (engine-v1.0.js, bomb-whistle-v1.0.js, explosion-1/2/3-v1.0.js, flak-fire-1/2-v1.0.js,
-// base-alarm-v1.0.js, siren-v1.0.js);
+// (engine-v1.1.js, bomb-whistle-v1.1.js, explosion-1/2/3-v1.1.js, flak-fire-1/2-v1.1.js,
+// base-alarm-v1.1.js, siren-v1.1.js);
 // everything else is made in code. Until the clips are decoded, coded versions play instead.
 const Sfx = (() => {
   const MUTE_KEY = "skyRaiderMuted";
