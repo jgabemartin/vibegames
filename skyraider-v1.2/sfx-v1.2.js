@@ -423,7 +423,7 @@ const Sfx = (() => {
     tone("sawtooth", 520, 70, 1.5, 0.07, 0.05);
   }
 
-  // Short bugle calls for take-off and the end of a run
+  // Short bugle calls for take-off and the end of a sortie
   function start() {
     [392, 523.25, 659.25, 783.99].forEach((f, i) => tone("triangle", f, f, i === 3 ? 0.4 : 0.16, 0.12, i * 0.11));
   }

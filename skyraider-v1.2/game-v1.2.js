@@ -7,28 +7,28 @@
   const H = canvas.height;
   const S = Sprites;
 
-  // Hidden test flags: ?autostart skips the title, &t=30 jumps ahead in the run,
+  // Hidden test flags: ?autostart skips the title, &t=30 jumps ahead in the sortie,
   // ?demo flies and bombs on its own, &seed=123 fixes the map,
   // &sim=5 plays 5 seconds instantly before the first frame (for screenshots),
   // &hp=1 starts each plane with only 1 hit left (to see the damage smoke)
   const params = new URLSearchParams(location.search);
   const DEMO = params.has("demo");
   const AUTOSTART = params.has("autostart") || DEMO;
-  const JUMP_T = Math.max(0, Math.min(55, parseFloat(params.get("t")) || 0));
+  const JUMP_T = Math.max(0, Math.min(85, parseFloat(params.get("t")) || 0));
   const SEED = params.has("seed") ? parseInt(params.get("seed"), 10) : null;
-  const SIM = Math.max(0, Math.min(70, parseFloat(params.get("sim")) || 0));
+  const SIM = Math.max(0, Math.min(100, parseFloat(params.get("sim")) || 0));
   const START_HP = parseInt(params.get("hp"), 10) || 99; // capped at PLANE_HITS when a plane is made
 
   // ---- Tuning (units: pixels and seconds) ----
-  const RUN_TIME = 60;
+  const SORTIE_TIME = 90;
   const SCROLL = 42; // ground speed
-  const TRAVEL = RUN_TIME * SCROLL;
+  const TRAVEL = SORTIE_TIME * SCROLL;
   const TAIL = 150; // ground past the end, for the fly-off
   const STRIP_H = TRAVEL + H + TAIL;
   const PLANE_Y = 300; // where each plane starts on screen
   const PLANE_Y_MIN = 110; // furthest forward the plane can fly
   const PLANE_Y_MAX = 340; // and furthest back
-  const PLANES_PER_RUN = 2;
+  const PLANES_PER_SORTIE = 2;
   const PLANE_HITS = 2; // flak hits a plane takes before it goes down
   const HIT_IMMUNE = 1; // seconds a plane can't be hit again after a flak hit
   const STEER_ACCEL = 380;
@@ -63,11 +63,12 @@
 
   // Map bands, as distance from the start (the bottom of the strip)
   const FARM_END = 1000;
-  const FRONT_END = 1900;
+  const FRONT_END = 2700;
   const RIVER_D = 940;
   const RIVER_HALF = 7;
-  const LINE1_D = 1230;
-  const LINE2_D = 1570;
+  // Trench lines in facing pairs, with no man's land between the two lines of each pair
+  const LINE_PAIRS = [[1230, 1570], [1990, 2330]];
+  const inNoMansLand = (d, pad) => LINE_PAIRS.some(([a, b]) => d > a - pad && d < b + pad);
 
   const POINTS = { trench: 25, truck: 50, tent: 75, gun: 100, aa: 125, ammo: 150, bridge: 200, winch: 250, house: -100 };
 
@@ -181,7 +182,7 @@
   const bombFwd = (p) => SCROLL - p.vy * BOMB_INHERIT;
 
   // ============================================================
-  // World generation: the whole map is painted once per run onto a tall strip
+  // World generation: the whole map is painted once per sortie onto a tall strip
   // ============================================================
   function buildWorld(seed) {
     rnd = mulberry32(seed);
@@ -330,22 +331,23 @@
   function paintFront(w) {
     const g = w.g;
     // Shell craters, thickest in no man's land
-    for (let i = 0; i < 170; i++) {
-      const d = rnd() < 0.55 ? rr(LINE1_D, LINE2_D) : rr(FARM_END + 40, FRONT_END - 30);
+    for (let i = 0; i < 330; i++) {
+      const [a, b] = pick(LINE_PAIRS);
+      const d = rnd() < 0.55 ? rr(a, b) : rr(FARM_END + 40, FRONT_END - 30);
       bakeCraterOn(g, rr(0, W), STRIP_H - d, ri(2, 6), rnd() < 0.2);
     }
     // Shattered tree stumps
-    for (let i = 0; i < 40; i++) {
+    for (let i = 0; i < 75; i++) {
       const x = Math.round(rr(4, W - 4));
       const y = Math.round(STRIP_H - rr(FARM_END + 40, FRONT_END - 40));
       g.fillStyle = "#2e2216";
       g.fillRect(x, y, 2, 2);
       g.fillRect(x + (rnd() < 0.5 ? -1 : 2), y - 1, 1, 1);
     }
-    // Two lines of zig-zag trenches with barbed wire facing no man's land
-    for (const ld of [LINE1_D, LINE2_D]) {
+    // Zig-zag trench lines with barbed wire facing no man's land
+    for (const [ld, near] of LINE_PAIRS.flatMap(([a, b]) => [[a, true], [b, false]])) {
       const baseY = Math.round(STRIP_H - ld);
-      const wireY = ld === LINE1_D ? baseY - 14 : baseY + 20;
+      const wireY = near ? baseY - 14 : baseY + 20;
       for (let x = 0; x < W; x++) {
         g.fillStyle = "#9a978a";
         g.fillRect(x, wireY + ((x >> 1) % 2), 1, 1);
@@ -367,7 +369,7 @@
         if (x + 8 > 4 && x + 8 < W - 4) addTarget(w, "trench", x + 8, yy + 2, null, { hw: 8, hh: 3 });
       }
       // Communication trenches lead back from each line
-      const back = ld === LINE1_D ? 1 : -1;
+      const back = near ? 1 : -1;
       for (let k = 0; k < 3; k++) {
         let x = rr(20, W - 20);
         g.fillStyle = "#33261a";
@@ -377,9 +379,10 @@
         }
       }
     }
-    // Artillery behind the second line, in sandbagged gun pits
-    for (let b = 0; b < 2; b++) {
-      const d0 = rr(1690, 1840);
+    // Artillery behind the far line of each pair, in sandbagged gun pits
+    for (let b = 0; b < 4; b++) {
+      const far = LINE_PAIRS[b >> 1][1];
+      const d0 = rr(far + 120, far + 270);
       const x0 = rr(30, W - 80);
       for (let k = 0; k < 3; k++) {
         const x = Math.round(x0 + k * 24);
@@ -436,7 +439,7 @@
 
   function paintCamps(w) {
     const g = w.g;
-    for (const dc of [ri(2020, 2080), ri(2300, 2370), ri(2580, 2640)]) {
+    for (const dc of [ri(2820, 2880), ri(3100, 3170), ri(3380, 3440), ri(3660, 3720)]) {
       const cw = ri(104, 128);
       const ch = ri(76, 92);
       const rx = w.roadX(dc);
@@ -496,8 +499,8 @@
     const g = w.g;
     for (let d = 0; d < STRIP_H; d++) {
       // No road through no man's land, and a broken one either side of it
-      if (d > LINE1_D - 40 && d < LINE2_D + 40) continue;
-      if (d > LINE1_D - 90 && d < LINE2_D + 90 && d % 20 < 9) continue;
+      if (inNoMansLand(d, 40)) continue;
+      if (inNoMansLand(d, 90) && d % 20 < 9) continue;
       const y = STRIP_H - d;
       const x = w.roadX(d);
       const muddy = d > FARM_END + 40 && d < FRONT_END;
@@ -559,9 +562,10 @@
     const groups = [
       { d: rr(320, 420), n: 3, lo: 100, hi: FARM_END - 40 },
       { d: rr(640, 780), n: 2, lo: 100, hi: FARM_END - 40 },
-      { d: rr(1700, 1790), n: 2, lo: LINE2_D + 100, hi: FRONT_END + 80 },
-      { d: rr(2150, 2240), n: 2, lo: FRONT_END + 60, hi: 2780 },
-      { d: rr(2440, 2540), n: 3, lo: FRONT_END + 60, hi: 2780 },
+      { d: rr(1700, 1790), n: 2, lo: LINE_PAIRS[0][1] + 100, hi: LINE_PAIRS[1][0] - 100 },
+      { d: rr(2460, 2550), n: 2, lo: LINE_PAIRS[1][1] + 100, hi: FRONT_END + 80 },
+      { d: rr(2950, 3040), n: 2, lo: FRONT_END + 60, hi: TRAVEL + 200 },
+      { d: rr(3240, 3340), n: 3, lo: FRONT_END + 60, hi: TRAVEL + 200 },
     ];
     for (const gr of groups) {
       const speed = rr(7, 12) * (rnd() < 0.5 ? -1 : 1);
@@ -575,7 +579,11 @@
   }
 
   function placeBlimps(w) {
-    const ds = [rr(520, 600), rr(840, 900), rr(1180, 1260), rr(1420, 1500), rr(1700, 1780), rr(2080, 2160), rr(2280, 2360), rr(2470, 2550), rr(2660, 2740)];
+    const ds = [
+      rr(520, 600), rr(840, 900), // farmland
+      rr(1180, 1260), rr(1420, 1500), rr(1700, 1780), rr(1940, 2020), rr(2180, 2260), rr(2460, 2540), // the front
+      rr(2860, 2940), rr(3060, 3140), rr(3260, 3340), rr(3460, 3540), rr(3660, 3740), // the camps
+    ];
     for (const d of ds) {
       for (let tries = 0; tries < 60; tries++) {
         const x = Math.round(rr(26, W - 26));
@@ -605,7 +613,11 @@
 
   // Anti-aircraft guns: a couple in the farmland, more at the front and in the camps
   function placeAAGuns(w) {
-    const ds = [rr(380, 520), rr(700, 880), rr(1060, 1180), rr(1600, 1700), rr(1780, 1880), rr(2100, 2400), rr(2450, 2750)];
+    const ds = [
+      rr(380, 520), rr(700, 880), // farmland
+      rr(1060, 1180), rr(1600, 1700), rr(1780, 1880), rr(2360, 2460), rr(2560, 2680), // the front
+      rr(2900, 3200), rr(3250, 3550), rr(3550, 3750), // the camps
+    ];
     for (const d of ds) {
       for (let tries = 0; tries < 60; tries++) {
         const x = Math.round(rr(20, W - 20));
@@ -647,7 +659,7 @@
         if (isFree(w, x, y, img.width / 2 - 1, img.height / 2 - 1, 3)) drawTreeOn(g, img, x, y);
       }
     }
-    scatter(45, FRONT_END + 20, STRIP_H - 10);
+    scatter(80, FRONT_END + 20, STRIP_H - 10);
   }
 
   // Fine grain over the whole map, for a hand-pixelled look
@@ -670,7 +682,7 @@
   }
 
   // ============================================================
-  // Runs
+  // Sorties
   // ============================================================
   function newPlane(first) {
     return {
@@ -693,13 +705,13 @@
     };
   }
 
-  function startRun() {
+  function startSortie() {
     Sfx.musicOff();
     world =buildWorld(SEED !== null ? SEED : (Math.random() * 1e9) | 0);
     time = 0;
     scroll = 0;
     score = 0;
-    planesLeft = PLANES_PER_RUN;
+    planesLeft = PLANES_PER_SORTIE;
     bombs = [];
     flak = [];
     particles = [];
@@ -725,7 +737,7 @@
     Sfx.engineOn();
   }
 
-  function endRun(isTimeUp) {
+  function endSortie(isTimeUp) {
     if (state === "over") return;
     state = "over";
     overT = 0;
@@ -772,8 +784,8 @@
         // The key press lets the browser start the music
         showOrders = true;
         Sfx.musicOn();
-      } else if (state === "title") startRun(); // mission accepted
-      else if (state === "over" && overT > 1.6) startRun();
+      } else if (state === "title") startSortie(); // mission accepted
+      else if (state === "over" && overT > 1.6) startSortie();
     } else if (e.code === "KeyM") {
       Sfx.toggleMute();
       soundMsgT = 1.2;
@@ -781,7 +793,7 @@
       if (state === "playing") pause();
       else if (state === "paused") resume();
     } else if (e.code === "Space") {
-      if (state === "over" && overT > 1.6) startRun();
+      if (state === "over" && overT > 1.6) startSortie();
       else if (state === "playing") dropRequested = true;
       else if (state === "paused") resume();
     }
@@ -899,7 +911,7 @@
       if (planesLeft > 0) {
         plane = newPlane(false);
         Sfx.engineOn();
-      } else endRun(false);
+      } else endSortie(false);
     }
   }
 
@@ -1334,9 +1346,9 @@
     }
     if (state === "playing") {
       time += dt;
-      if (time >= RUN_TIME) {
-        time = RUN_TIME;
-        endRun(true);
+      if (time >= SORTIE_TIME) {
+        time = SORTIE_TIME;
+        endSortie(true);
       }
     }
     if (state === "over") overT += dt;
@@ -1662,7 +1674,7 @@
     ctx.fillStyle = "rgba(16,18,26,0.78)";
     ctx.fillRect(0, 0, W, 13);
     S.text(ctx, "SCORE " + score, 4, 3, "#f2efe4");
-    const left = Math.max(0, RUN_TIME - time);
+    const left = Math.max(0, SORTIE_TIME - time);
     const secs = Math.ceil(left);
     const tStr = Math.floor(secs / 60) + ":" + String(secs % 60).padStart(2, "0");
     const blink = left <= 5 && left > 0 && Math.floor(animT * 4) % 2 === 0;
@@ -1734,7 +1746,7 @@
     ctx.fillRect(0, 219, W, 1);
     S.text(ctx, "THE WESTERN FRONT, 1917", W / 2, 84, "#c9c6b8", { align: "center" });
     S.text(ctx, "SKYRAIDER", W / 2, 102, "#f2d16b", { scale: 4, align: "center" });
-    S.text(ctx, "WWI BOMBING RUN", W / 2, 140, "#f2efe4", { scale: 2, align: "center" });
+    S.text(ctx, "WWI BOMBING SORTIE", W / 2, 140, "#f2efe4", { scale: 2, align: "center" });
     S.text(ctx, "V" + VERSION, W / 2, 160, "#c9c6b8", { align: "center" });
     if (Math.floor(animT * 2) % 2 === 0) S.text(ctx, "PRESS ENTER", W / 2, 180, "#ffffff", { scale: 2, align: "center" });
     S.text(ctx, "FOR YOUR MISSION", W / 2, 200, "#f2efe4", { align: "center" });
@@ -1744,7 +1756,7 @@
   // The mission orders on a sheet of paper, under the logo
   function drawOrders() {
     S.text(ctx, "SKYRAIDER", W / 2, 18, "#f2d16b", { scale: 3, align: "center" });
-    S.text(ctx, "V" + VERSION + "  -  WWI BOMBING RUN", W / 2, 43, "#f2efe4", { align: "center" });
+    S.text(ctx, "V" + VERSION + "  -  WWI BOMBING SORTIE", W / 2, 43, "#f2efe4", { align: "center" });
 
     const x = 16, y = 58, w = W - 32, h = 242;
     const INK = "#2b2418", FADED = "#5e5039", RED = "#a8322a";
@@ -1780,7 +1792,7 @@
       "AMMO DUMPS, AA GUNS AND THE BRIDGE.",
       "SPARE THE VILLAGES: -100 A HOUSE.",
       "BOMBS DRIFT IN THE WIND.",
-      "60 SECONDS, 2 PLANES.",
+      "90 SECONDS, 2 PLANES.",
     ].forEach((r, i) => ink(r, 144 + i * 10, FADED));
     rule(196);
     [
@@ -1809,7 +1821,7 @@
   function drawOver() {
     if (overT < 1.2) return;
     panel(24, 70, W - 48, 210);
-    S.text(ctx, timeUp ? "RUN COMPLETE" : "SHOT DOWN", W / 2, 82, timeUp ? "#f2d16b" : "#ff6a5a", { scale: 2, align: "center" });
+    S.text(ctx, timeUp ? "SORTIE COMPLETE" : "SHOT DOWN", W / 2, 82, timeUp ? "#f2d16b" : "#ff6a5a", { scale: 2, align: "center" });
     const acc = stats.bombs ? Math.round((stats.bombHits / stats.bombs) * 100) : 0;
     const rows = [
       ["TARGETS HIT", String(stats.hits), "#f2efe4"],
@@ -1888,7 +1900,7 @@
   wind = 12;
   windTarget = 12;
   windTimer = 5;
-  if (AUTOSTART) startRun();
+  if (AUTOSTART) startSortie();
   if (SIM) {
     for (let i = 0; i < SIM * 60; i++) update(1 / 60);
     const kinds = {};

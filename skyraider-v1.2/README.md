@@ -1,6 +1,6 @@
 # SkyRaider v1.2
 
-A World War I bombing run with 16-bit-style pixel art. Fly a biplane up the screen over farmland, the front-line trenches and army camps, and drop bombs on military targets. Where a bomb lands depends on where you are, when you let go, how fast you're flying and which way the wind is blowing. You have 60 seconds and 2 planes per run.
+A World War I bombing sortie with 16-bit-style pixel art. Fly a biplane up the screen over farmland, the front-line trenches and army camps, and drop bombs on military targets. Where a bomb lands depends on where you are, when you let go, how fast you're flying and which way the wind is blowing. You have 90 seconds and 2 planes per sortie.
 
 ## How to play
 
@@ -25,13 +25,13 @@ The game opens on a title screen. Press Enter to see your mission orders, and a 
 
 ## Rules
 
-### The run
+### The sortie
 
-- Each run lasts 60 seconds. The map is new every run, in three parts:
+- Each sortie lasts 90 seconds. The map is new every sortie, in three parts:
   1. **Farmland:** fields, villages, a river with a bridge, and supply depots. An air-raid siren wails as you fly over each village.
-  2. **The front:** two lines of zig-zag trenches with barbed wire, shell-cratered no man's land and artillery behind the lines.
+  2. **The front:** two sets of facing trench lines, four zig-zag lines in all, with barbed wire, shell-cratered no man's land between each pair, and artillery behind them.
   3. **Army camps:** fenced camps full of tents, trucks, guns and ammo dumps. An alarm sounds as each camp comes into view.
-- You get 2 planes. The run ends when time runs out or both planes are shot down.
+- You get 2 planes. The sortie ends when time runs out or both planes are shot down.
 
 ### Dropping bombs
 
@@ -47,7 +47,7 @@ The game opens on a title screen. Press Enter to see your mission orders, and a 
 
 ### Wind
 
-- The wind blows left or right. Its strength shifts during the run. The **WIND** box shows the direction and strength, and chimney smoke and camp flags lean with it.
+- The wind blows left or right. Its strength shifts during the sortie. The **WIND** box shows the direction and strength, and chimney smoke and camp flags lean with it.
 - Bombs drift with the wind as they fall.
 - The wind also pushes your plane and the blimps a little.
 
@@ -71,10 +71,10 @@ The game opens on a title screen. Press Enter to see your mission orders, and a 
 | Blimp winch (brings its blimp down) | 250 |
 | **Village house or church** | **-100** |
 
-- Each plane still flying at the end of the 60 seconds is worth **+200**.
+- Each plane still flying at the end of the 90 seconds is worth **+200**.
 - Your best score is saved in your browser.
 
-At the end of each run you're awarded a rank for your score:
+At the end of each sortie you're awarded a rank for your score:
 
 | Score | Rank |
 |---|---|
@@ -117,8 +117,10 @@ At the end of each run you're awarded a rank for your score:
 - Blimp mooring cables are no longer a hazard.
 - A new title screen. Press Enter to see your mission orders on a "TOP SECRET" sheet, then Enter again to accept the mission.
 - A march starts with the mission orders and fades out as you take off.
-- A rank at the end of each run, from Meritorious Airman up to Supreme Air Marshal, based on your score.
+- A rank at the end of each sortie, from Meritorious Airman up to Supreme Air Marshal, based on your score.
 - Bigger bomb blasts, with a shock wave ring, more flying debris and a larger crater. Each crater keeps burning and smoking for several seconds afterwards.
+- Sorties last 90 seconds instead of 60. The front is twice as deep, with a second pair of trench lines and its own no man's land and artillery. The camp area is longer too, with a fourth camp, and there are more blimps, AA guns and trucks along the way.
+- A run is now called a sortie, on screen and in this README.
 
 ### 1.1: Bomb loads, plane damage, alarms and more recorded sounds
 
@@ -132,12 +134,12 @@ At the end of each run you're awarded a rank for your score:
 
 ### 1.0: First release
 
-- Biplane bombing run over farmland, the front and army camps, with a new map every run.
+- Biplane bombing sortie over farmland, the front and army camps, with a new map every sortie.
 - Bombs keep the plane's forward speed and drift with the wind. Altitude sets the fall time and a score multiplier of up to x2.
 - A bombsight shows where a bomb would land in still air.
 - Targets: trenches, trucks (some moving), tents, guns, ammo dumps with chain explosions, the bridge and blimp winches. Houses cost points.
 - Barrage blimps with mooring cables and flak gunners, and anti-aircraft guns that track the plane. Flak shells are shown flying to their burst.
-- 60-second runs with 2 planes, a plane bonus, a run summary and a saved best score.
+- 60-second sorties with 2 planes, a plane bonus, a sortie summary and a saved best score.
 - Pixel art, a bitmap font, clouds, smoke and fire. The plane banks as it steers, lowering one wing and showing the side of the body, and tips its nose up to climb or down to dive.
 - Recorded sounds for the falling-bomb whistle, timed to each fall, and the explosions: three blasts picked at random, at a slightly different pitch each time. Other sound effects are made in code: flak, scoring chimes, bugle calls.
 
@@ -168,9 +170,9 @@ Adding these to the end of the `index.html` address helps with testing. Players 
 
 - `?autostart`: skip the title screen.
 - `?demo`: the plane flies and bombs on its own, and can't be shot down.
-- `&t=30`: start 30 seconds into the run.
+- `&t=30`: start 30 seconds into the sortie.
 - `&seed=7`: use the same map every time.
 - `&hp=1`: each plane starts with only 1 hit left, to see the damage smoke.
-- `&sim=5`: play 5 seconds instantly before the first frame, and put the run's stats in the page title. Used for screenshots in a headless browser.
+- `&sim=5`: play 5 seconds instantly before the first frame, and put the sortie's stats in the page title. Used for screenshots in a headless browser.
 
 For example: `index.html?demo&seed=7&t=30&sim=4`.
