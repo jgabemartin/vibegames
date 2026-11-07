@@ -1,11 +1,12 @@
-// SkyRaider sound effects, made with the Web Audio API. The engine, the bomb whistle and the
-// explosions are recorded clips embedded as base64 (engine-v1.0.js, bomb-whistle-v1.0.js,
-// explosion-1/2/3-v1.0.js);
+// SkyRaider sound effects, made with the Web Audio API. The engine, the bomb whistle, the
+// explosions and the flak guns firing are recorded clips embedded as base64 (engine-v1.0.js,
+// bomb-whistle-v1.0.js, explosion-1/2/3-v1.0.js, flak-fire-1/2-v1.0.js);
 // everything else is made in code. Until the clips are decoded, coded versions play instead.
 const Sfx = (() => {
   const MUTE_KEY = "skyRaiderMuted";
   const VOLUME = 0.7;
   const ENGINE_CLIP_VOL = 0.3; // the recorded engine, kept under the bombs and flak
+  const FLAK_FIRE_VOL = 0.35; // guns firing: a bit quieter than the bombs, since they're further off
   const ENGINE_SKIP = 2; // seconds of start-up at the front of engine.mp3 that aren't looped
 
   let ctx = null;
@@ -18,6 +19,7 @@ const Sfx = (() => {
   let whistle = null; // { buf, end }: decoded bomb-whistle.mp3 and where its sound ends
   let blasts = []; // [{ buf, start }]: decoded explosion clips and where each one starts
   let lastBlast = -1;
+  let shots = []; // [{ buf, start }]: decoded flak-firing clips
   let playing = []; // explosion clips still sounding, so a carpet of bombs can't pile up
   try {
     muted = localStorage.getItem(MUTE_KEY) === "1";
@@ -108,6 +110,8 @@ const Sfx = (() => {
       typeof EXPLOSION_3_MP3 !== "undefined" && EXPLOSION_3_MP3,
     ];
     for (const b64 of explosions) if (b64) decodeEmbedded(b64, (buf) => blasts.push({ buf, start: soundSpan(buf)[0] }));
+    const firing = [typeof FLAK_FIRE_1_MP3 !== "undefined" && FLAK_FIRE_1_MP3, typeof FLAK_FIRE_2_MP3 !== "undefined" && FLAK_FIRE_2_MP3];
+    for (const b64 of firing) if (b64) decodeEmbedded(b64, (buf) => shots.push({ buf, start: soundSpan(buf)[0] }));
   }
 
   function playClip(buf, offset, dur, vol, rate = 1) {
@@ -311,6 +315,14 @@ const Sfx = (() => {
 
   // A distant gun firing a flak shell
   function flakFire() {
+    if (!ctx) return;
+    if (shots.length) {
+      // One of the two gunshot clips at random, at a slightly random pitch
+      const s = shots[Math.floor(Math.random() * shots.length)];
+      const p = playClip(s.buf, s.start, undefined, FLAK_FIRE_VOL, 0.9 + Math.random() * 0.2);
+      p.g.gain.setTargetAtTime(0, ctx.currentTime + 0.6, 0.15);
+      return;
+    }
     noise("lowpass", 700, 120, 0.18, 0.18, 0, 0.7);
   }
 

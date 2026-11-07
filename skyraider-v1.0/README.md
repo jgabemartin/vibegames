@@ -106,10 +106,11 @@ Sound starts on your first key press, because browsers block audio until you int
 - 60-second runs with 2 planes, a plane bonus, a run summary and a saved best score.
 - Down climbs and Up dives, like pulling back and pushing forward on a flight stick.
 - Pixel art, a bitmap font, clouds, smoke and fire. The plane banks as it steers, lowering one wing and showing the side of the body, and tips its nose up to climb or down to dive.
-- Recorded sounds for the engine, the falling-bomb whistle and the explosions:
+- Recorded sounds for the engine, the falling-bomb whistle, the explosions and the flak guns firing:
   - The engine skips the clip's first 2 seconds of start-up and loops the rest, revving up as you climb.
   - The whistle is timed to each fall.
   - The explosions are three blasts picked at random, at a slightly different pitch each time.
+  - Each flak shot, from a blimp or an AA gun, is one of two gunshots picked at random.
 - Other sound effects are made in code: flak, scoring chimes, bugle calls.
 
 ## Files
@@ -118,8 +119,8 @@ Sound starts on your first key press, because browsers block audio until you int
 - `game-v1.0.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
 - `sprites-v1.0.js`: the color palette, pixel-art sprites and the bitmap font
 - `sfx-v1.0.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready
-- `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`: the recorded sounds
-- `engine-v1.0.js`, `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
+- `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`, `flak-fire-1.mp3`, `flak-fire-2.mp3`: the recorded sounds
+- `engine-v1.0.js`, `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`, `flak-fire-1-v1.0.js`, `flak-fire-2-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
 - `style-v1.0.css`: page styling
 
 The folder and the `-v1.0` file names include the version number. For a new version:
