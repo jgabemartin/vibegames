@@ -1,15 +1,20 @@
-// SkyRaider sound effects, made with the Web Audio API. The bomb whistle and the explosions
-// are recorded clips embedded as base64 (bomb-whistle-v1.0.js, explosion-1/2/3-v1.0.js);
+// SkyRaider sound effects, made with the Web Audio API. The engine, the bomb whistle and the
+// explosions are recorded clips embedded as base64 (engine-v1.0.js, bomb-whistle-v1.0.js,
+// explosion-1/2/3-v1.0.js);
 // everything else is made in code. Until the clips are decoded, coded versions play instead.
 const Sfx = (() => {
   const MUTE_KEY = "skyRaiderMuted";
   const VOLUME = 0.7;
+  const ENGINE_CLIP_VOL = 0.3; // the recorded engine, kept under the bombs and flak
+  const ENGINE_SKIP = 2; // seconds of start-up at the front of engine.mp3 that aren't looped
 
   let ctx = null;
   let master = null;
   let noiseBuf = null;
   let eng = null;
   let muted = false;
+  let engineClip = null; // { buf, loopStart, loopEnd }: decoded engine.mp3 and its steady stretch
+  let engineLevel = { alt: 0.5, climb: 0 };
   let whistle = null; // { buf, end }: decoded bomb-whistle.mp3 and where its sound ends
   let blasts = []; // [{ buf, start }]: decoded explosion clips and where each one starts
   let lastBlast = -1;
@@ -65,7 +70,33 @@ const Sfx = (() => {
     return [Math.max(0, a / buf.sampleRate - 0.002), b / buf.sampleRate];
   }
 
+  // Skip the first 2 s of the clip, where the engine turns over, and loop the rest.
+  // Both ends are cut where the wave crosses zero going up, so the loop doesn't click
+  function findEngineLoop(buf) {
+    const d = buf.getChannelData(0);
+    const upCross = (i) => {
+      while (i < d.length - 1 && !(d[i] <= 0 && d[i + 1] > 0)) i++;
+      return i;
+    };
+    let last = d.length - 1;
+    while (last > 0 && Math.abs(d[last]) < 0.02) last--; // trailing silence
+    const a = upCross(Math.floor(buf.sampleRate * ENGINE_SKIP));
+    let b = last;
+    while (b > a && !(d[b - 1] <= 0 && d[b] > 0)) b--;
+    return { buf, loopStart: a / buf.sampleRate, loopEnd: b / buf.sampleRate };
+  }
+
   function loadClips() {
+    if (typeof ENGINE_MP3 !== "undefined") {
+      decodeEmbedded(ENGINE_MP3, (buf) => {
+        engineClip = findEngineLoop(buf);
+        // Swap the coded drone for the recording if it's already running
+        if (eng && !eng.src) {
+          engineOff(0.05);
+          engineOn();
+        }
+      });
+    }
     if (typeof BOMB_WHISTLE_MP3 !== "undefined") {
       decodeEmbedded(BOMB_WHISTLE_MP3, (buf) => {
         whistle = { buf, end: soundSpan(buf)[1] };
@@ -135,6 +166,23 @@ const Sfx = (() => {
   // ---- Engine drone: a buzzy saw with a throb from the propeller ----
   function engineOn() {
     if (!ctx || eng) return;
+    if (engineClip) {
+      const src = ctx.createBufferSource();
+      src.buffer = engineClip.buf;
+      src.loop = true;
+      src.loopStart = engineClip.loopStart;
+      src.loopEnd = engineClip.loopEnd;
+      const g = ctx.createGain();
+      src.connect(g);
+      g.connect(master);
+      const t = ctx.currentTime;
+      g.gain.setValueAtTime(0, t);
+      g.gain.linearRampToValueAtTime(ENGINE_CLIP_VOL, t + 0.6);
+      src.start(t, engineClip.loopStart);
+      eng = { src, g, nodes: [src] };
+      setEngine(engineLevel.alt, engineLevel.climb);
+      return;
+    }
     const o1 = ctx.createOscillator();
     o1.type = "sawtooth";
     o1.frequency.value = 62;
@@ -164,11 +212,17 @@ const Sfx = (() => {
     o1.start(t);
     o2.start(t);
     lfo.start(t);
-    eng = { o1, o2, lfo, g };
+    eng = { o1, o2, lfo, g, nodes: [o1, o2, lfo] };
   }
 
   function setEngine(alt, climb) {
+    engineLevel = { alt, climb };
     if (!eng) return;
+    if (eng.src) {
+      // Revs up as the plane climbs and higher up
+      eng.src.playbackRate.setTargetAtTime(0.9 + alt * 0.25 + climb * 0.08, ctx.currentTime, 0.25);
+      return;
+    }
     const f = 56 + alt * 16 + climb * 8;
     const t = ctx.currentTime;
     eng.o1.frequency.setTargetAtTime(f, t, 0.25);
@@ -176,15 +230,15 @@ const Sfx = (() => {
     eng.lfo.frequency.setTargetAtTime(f / 4.2, t, 0.25);
   }
 
-  function engineOff() {
+  function engineOff(fade = 0.3) {
     if (!eng) return;
     const e = eng;
     eng = null;
     const t = ctx.currentTime;
     e.g.gain.cancelScheduledValues(t);
     e.g.gain.setValueAtTime(e.g.gain.value, t);
-    e.g.gain.linearRampToValueAtTime(0, t + 0.3);
-    for (const o of [e.o1, e.o2, e.lfo]) o.stop(t + 0.35);
+    e.g.gain.linearRampToValueAtTime(0, t + fade);
+    for (const n of e.nodes) n.stop(t + fade + 0.05);
   }
 
   // ---- Effects ----

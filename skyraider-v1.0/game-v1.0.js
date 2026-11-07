@@ -31,7 +31,8 @@
   const CLIMB_RATE = 0.5; // altitude goes from 0 to 1
   const WIND_MAX = 30;
   const WIND_PUSH = 0.15; // how much the wind nudges the plane
-  const BOMB_RELOAD = 0.7;
+  const BOMB_LOAD = 3; // bombs per load, dropped as fast as Space is pressed
+  const BOMB_RELOAD = 3; // seconds after the last drop until the load is full again
   const FALL_MIN = 0.8; // fall time from the lowest altitude
   const FALL_MAX = 2.0; // and from the highest
   const BOMB_DRAG = 0.25; // bombs slowly lose the plane's forward speed
@@ -131,7 +132,8 @@
   let wind = 0;
   let windTarget = 0;
   let windTimer = 0;
-  let reload = 0;
+  let bombsLeft = BOMB_LOAD;
+  let reload = 0; // counts down while reloading
   let dropRequested = false;
   let stats = null;
   let overT = 0;
@@ -675,6 +677,7 @@
     particles = [];
     popups = [];
     chains = [];
+    bombsLeft = BOMB_LOAD;
     reload = 0;
     dropRequested = false;
     wind = (8 + Math.random() * (WIND_MAX - 8)) * (Math.random() < 0.5 ? -1 : 1);
@@ -762,7 +765,10 @@
     const p = plane;
     p.prop += dt * 30;
     if (p.invuln > 0) p.invuln -= dt;
-    if (reload > 0) reload -= dt;
+    if (reload > 0) {
+      reload -= dt;
+      if (reload <= 0) bombsLeft = BOMB_LOAD;
+    }
 
     if (!p.alive) {
       updateDying(p, dt);
@@ -785,11 +791,12 @@
     }
 
     let dir = (held("ArrowRight", "KeyD") ? 1 : 0) - (held("ArrowLeft", "KeyA") ? 1 : 0);
-    let climb = (held("ArrowUp", "KeyW") ? 1 : 0) - (held("ArrowDown", "KeyS") ? 1 : 0);
+    // Flown like a stick: Down pulls back to climb, Up pushes forward to dive
+    let climb = (held("ArrowDown", "KeyS") ? 1 : 0) - (held("ArrowUp", "KeyW") ? 1 : 0);
     if (DEMO) {
       dir = Math.sin(animT * 0.9) > 0 ? 1 : -1;
       climb = Math.sin(animT * 0.4) > 0 ? 1 : -1;
-      if (reload <= 0) dropRequested = true;
+      if (bombsLeft > 0 && Math.random() < dt * 2) dropRequested = true;
     }
     if (dir) p.vx += dir * STEER_ACCEL * dt;
     else p.vx -= p.vx * Math.min(1, STEER_DRAG * dt);
@@ -814,7 +821,7 @@
 
     if (dropRequested) {
       dropRequested = false;
-      if (reload <= 0) dropBomb();
+      if (bombsLeft > 0) dropBomb();
     }
     checkPlaneCollisions();
   }
@@ -900,7 +907,8 @@
       h0: heightOf(plane.alt),
       mult: multOf(plane.alt),
     });
-    reload = BOMB_RELOAD;
+    bombsLeft -= 1;
+    reload = BOMB_RELOAD; // every drop restarts the reload
     stats.bombs++;
     Sfx.drop(T);
   }
@@ -1276,7 +1284,7 @@
     const side = (p.vx * BOMB_INHERIT * (1 - Math.exp(-BOMB_SIDE_K * T))) / BOMB_SIDE_K;
     const x = Math.round(p.x + side);
     const y = Math.round(p.y - 4 - ahead);
-    ctx.globalAlpha = reload > 0 ? 0.35 : 0.85;
+    ctx.globalAlpha = bombsLeft === 0 ? 0.35 : 0.85;
     ctx.fillStyle = "#f2efe4";
     for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
       ctx.fillRect(x + dx * 5 - (dx < 0 ? 0 : 2), y + dy * 5, 3, 1);
@@ -1547,9 +1555,24 @@
     ctx.fillStyle = "#f2d16b";
     ctx.fillRect(gx - 4, gy + gh - ah - 1, 8, 2);
     S.text(ctx, "X" + multOf(plane.alt).toFixed(1), gx - 2, gy + gh + 4, "#f2d16b", { align: "center" });
-    ctx.globalAlpha = reload > 0 ? 0.3 : 1;
-    ctx.drawImage(S.bombL, gx - 11, gy + 2);
+    // Bomb load, in a box beside the gauge: one icon per bomb left, and a bar that fills while reloading
+    const bx = gx - 42;
+    const by = gy + gh - 21;
+    ctx.fillStyle = "rgba(16,18,26,0.6)";
+    ctx.fillRect(bx, by, 26, 34);
+    S.text(ctx, "BOMB", bx + 13, by + 3, bombsLeft ? "#c9c6b8" : "#e0503c", { align: "center" });
+    for (let i = 0; i < BOMB_LOAD; i++) {
+      ctx.globalAlpha = i < bombsLeft ? 1 : 0.25;
+      ctx.drawImage(S.bombL, bx + 2 + i * 8, by + 12, 6, 14);
+    }
     ctx.globalAlpha = 1;
+    if (bombsLeft < BOMB_LOAD) {
+      const fill = Math.round(22 * (1 - reload / BOMB_RELOAD));
+      ctx.fillStyle = "#2a2c36";
+      ctx.fillRect(bx + 2, by + 29, 22, 2);
+      ctx.fillStyle = "#f2d16b";
+      ctx.fillRect(bx + 2, by + 29, fill, 2);
+    }
   }
 
   function drawVersion() {
@@ -1574,7 +1597,7 @@
     S.text(ctx, "V" + VERSION + "  -  WWI BOMBING RUN", W / 2, 80, "#c9c6b8", { align: "center" });
     const lines = [
       ["LEFT/RIGHT", "STEER"],
-      ["UP/DOWN", "CLIMB / DIVE"],
+      ["DOWN/UP", "CLIMB / DIVE"],
       ["SPACE", "DROP A BOMB"],
       ["P", "PAUSE"],
       ["M", "SOUND ON/OFF"],

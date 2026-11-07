@@ -17,7 +17,7 @@ Sound starts on your first key press, because browsers block audio until you int
 | Key | Action |
 |---|---|
 | Left / Right (or A / D) | Steer |
-| Up / Down (or W / S) | Climb / dive |
+| Down / Up (or S / W) | Climb / dive, like a flight stick: pull back to climb, push forward to dive |
 | Space | Drop a bomb (start the game, fly again) |
 | P | Pause (the game also pauses when the window loses focus) |
 | M | Sound on or off (remembered) |
@@ -35,9 +35,11 @@ Sound starts on your first key press, because browsers block audio until you int
 ### Dropping bombs
 
 - Bombs fall straight down from the plane, but they keep most of the plane's forward speed. **Drop before the target reaches you.** The bomb lands close to where the plane is when it hits the ground, slightly behind.
-- The **bombsight**, a set of corner marks on the ground ahead of the plane, shows roughly where a bomb dropped right now would land in still air. It moves with your altitude and steering, but it **ignores the wind**, so aim upwind of the target to allow for drift. It dims while you reload.
+- The **bombsight**, a set of corner marks on the ground ahead of the plane, shows roughly where a bomb dropped right now would land in still air. It moves with your altitude and steering, but it **ignores the wind**, so aim upwind of the target to allow for drift. It dims while you're out of bombs.
 - The falling bomb's shadow shows where it's heading. Bomb and shadow meet where it lands.
-- One bomb every 0.7 seconds, with no limit. The bomb icon by the altitude gauge lights up when you can drop again.
+- You carry **3 bombs** at a time and can drop them as fast as you can press Space.
+- **3 seconds** after your last drop, you're back to a full load of 3. If you still have bombs left, you can keep dropping, but each drop starts the 3 seconds again. If you're out, you have to wait. There's no limit on reloads.
+- The **BOMB** box beside the altitude gauge shows how many bombs you have left, and a bar fills up as the reload counts down. The label turns red when you're out.
 - If you're steering when you let go, the bomb keeps half of your sideways speed.
 
 ### Wind
@@ -48,7 +50,7 @@ Sound starts on your first key press, because browsers block audio until you int
 
 ### Altitude and points
 
-- Up and Down change your altitude, shown on the **ALT** gauge. The plane's shadow moves further away the higher you fly.
+- Down climbs and Up dives, and the **ALT** gauge shows your altitude. The plane's shadow moves further away the higher you fly.
 - From low down a bomb takes 0.8 seconds to land. From the top it takes 2 seconds, so it drifts much further in the wind.
 - Higher drops score more: points are multiplied by **x1.0** at the lowest altitude, up to **x2.0** at the highest. The gauge shows the current multiplier.
 
@@ -87,6 +89,7 @@ Sound starts on your first key press, because browsers block audio until you int
 
 - Fly high over targets in the open, where drift is easy to judge, and low when the wind is strong or houses are close by.
 - Keep steady for a moment before you drop, so the bomb doesn't fly off sideways.
+- Three quick drops make a stick of bombs along your path, good for a row of tents or a line of trucks. Then you have 3 seconds with no bombs, so don't waste them.
 - A moving truck needs a lead: drop ahead of where it's going.
 - Ammo dumps sit among other targets, so one good hit can score several times over.
 
@@ -99,9 +102,15 @@ Sound starts on your first key press, because browsers block audio until you int
 - Targets: trenches, trucks (some moving), tents, guns, ammo dumps with chain explosions, the bridge and blimp winches. Houses cost points.
 - Barrage blimps with mooring cables and flak gunners, and anti-aircraft guns that track the plane. Flak shells are shown flying to their burst.
 - A bombsight shows where a bomb would land in still air.
+- Loads of 3 bombs that drop as fast as you press Space. The load refills 3 seconds after the last drop, shown in a BOMB box by the altitude gauge.
 - 60-second runs with 2 planes, a plane bonus, a run summary and a saved best score.
+- Down climbs and Up dives, like pulling back and pushing forward on a flight stick.
 - Pixel art, a bitmap font, clouds, smoke and fire. The plane banks as it steers, lowering one wing and showing the side of the body, and tips its nose up to climb or down to dive.
-- Recorded sounds for the falling-bomb whistle, timed to each fall, and the explosions: three blasts picked at random, at a slightly different pitch each time. Other sound effects are made in code: engine, flak, bugle calls.
+- Recorded sounds for the engine, the falling-bomb whistle and the explosions:
+  - The engine skips the clip's first 2 seconds of start-up and loops the rest, revving up as you climb.
+  - The whistle is timed to each fall.
+  - The explosions are three blasts picked at random, at a slightly different pitch each time.
+- Other sound effects are made in code: flak, scoring chimes, bugle calls.
 
 ## Files
 
@@ -109,8 +118,8 @@ Sound starts on your first key press, because browsers block audio until you int
 - `game-v1.0.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
 - `sprites-v1.0.js`: the color palette, pixel-art sprites and the bitmap font
 - `sfx-v1.0.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready
-- `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`: the recorded sounds
-- `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
+- `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`: the recorded sounds
+- `engine-v1.0.js`, `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
 - `style-v1.0.css`: page styling
 
 The folder and the `-v1.0` file names include the version number. For a new version:
