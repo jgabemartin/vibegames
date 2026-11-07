@@ -1,12 +1,16 @@
 // SkyRaider sound effects, made with the Web Audio API. The engine, the bomb whistle, the
-// explosions and the flak guns firing are recorded clips embedded as base64 (engine-v1.0.js,
-// bomb-whistle-v1.0.js, explosion-1/2/3-v1.0.js, flak-fire-1/2-v1.0.js);
+// explosions, the flak guns firing and the camp alarm are recorded clips embedded as base64
+// (engine-v1.0.js, bomb-whistle-v1.0.js, explosion-1/2/3-v1.0.js, flak-fire-1/2-v1.0.js,
+// base-alarm-v1.0.js, siren-v1.0.js);
 // everything else is made in code. Until the clips are decoded, coded versions play instead.
 const Sfx = (() => {
   const MUTE_KEY = "skyRaiderMuted";
   const VOLUME = 0.7;
   const ENGINE_CLIP_VOL = 0.3; // the recorded engine, kept under the bombs and flak
   const FLAK_FIRE_VOL = 0.35; // guns firing: a bit quieter than the bombs, since they're further off
+  const ALARM_VOL = 0.4;
+  const SIREN_VOL = 0.3;
+  const SIREN_FADE = 2; // seconds to fade out once the village is behind
   const ENGINE_SKIP = 2; // seconds of start-up at the front of engine.mp3 that aren't looped
 
   let ctx = null;
@@ -19,6 +23,10 @@ const Sfx = (() => {
   let whistle = null; // { buf, end }: decoded bomb-whistle.mp3 and where its sound ends
   let blasts = []; // [{ buf, start }]: decoded explosion clips and where each one starts
   let lastBlast = -1;
+  let alarmClip = null; // { buf, start }: decoded base-alarm.mp3
+  let sirenBuf = null; // decoded siren.mp3
+  let siren = null; // { src, g, on } while the siren is sounding
+  let sirenWanted = false; // asked for before the clip finished decoding
   let shots = []; // [{ buf, start }]: decoded flak-firing clips
   let playing = []; // explosion clips still sounding, so a carpet of bombs can't pile up
   try {
@@ -112,6 +120,13 @@ const Sfx = (() => {
     for (const b64 of explosions) if (b64) decodeEmbedded(b64, (buf) => blasts.push({ buf, start: soundSpan(buf)[0] }));
     const firing = [typeof FLAK_FIRE_1_MP3 !== "undefined" && FLAK_FIRE_1_MP3, typeof FLAK_FIRE_2_MP3 !== "undefined" && FLAK_FIRE_2_MP3];
     for (const b64 of firing) if (b64) decodeEmbedded(b64, (buf) => shots.push({ buf, start: soundSpan(buf)[0] }));
+    if (typeof SIREN_MP3 !== "undefined") {
+      decodeEmbedded(SIREN_MP3, (buf) => {
+        sirenBuf = buf;
+        if (sirenWanted) sirenOn();
+      });
+    }
+    if (typeof BASE_ALARM_MP3 !== "undefined") decodeEmbedded(BASE_ALARM_MP3, (buf) => (alarmClip = { buf, start: soundSpan(buf)[0] }));
   }
 
   function playClip(buf, offset, dur, vol, rate = 1) {
@@ -326,6 +341,59 @@ const Sfx = (() => {
     noise("lowpass", 700, 120, 0.18, 0.18, 0, 0.7);
   }
 
+  // An army camp comes into view
+  function alarm() {
+    if (!ctx) return;
+    if (alarmClip) {
+      playClip(alarmClip.buf, alarmClip.start, undefined, ALARM_VOL);
+      return;
+    }
+    for (let i = 0; i < 4; i++) tone("square", 880, 660, 0.18, 0.05, i * 0.25);
+  }
+
+  // Air-raid siren over the villages: fades in, loops while needed, and fades out
+  function sirenOn() {
+    sirenWanted = true;
+    if (!ctx || !sirenBuf) return;
+    const t = ctx.currentTime;
+    if (!siren) {
+      const src = ctx.createBufferSource();
+      src.buffer = sirenBuf;
+      src.loop = true;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      src.connect(g);
+      g.connect(master);
+      src.start(t);
+      siren = { src, g, on: false };
+    }
+    if (!siren.on) {
+      // Swell up, or back up if it was still fading out
+      siren.on = true;
+      siren.g.gain.cancelScheduledValues(t);
+      siren.g.gain.setValueAtTime(Math.max(0.0001, siren.g.gain.value), t);
+      siren.g.gain.linearRampToValueAtTime(SIREN_VOL, t + 1);
+      if (siren.stopTimer) clearTimeout(siren.stopTimer);
+    }
+  }
+
+  function sirenOff() {
+    sirenWanted = false;
+    if (!siren || !siren.on) return;
+    const s = siren;
+    const t = ctx.currentTime;
+    s.on = false;
+    s.g.gain.cancelScheduledValues(t);
+    s.g.gain.setValueAtTime(s.g.gain.value, t);
+    s.g.gain.linearRampToValueAtTime(0, t + SIREN_FADE);
+    s.stopTimer = setTimeout(() => {
+      if (siren === s && !s.on) {
+        s.src.stop();
+        siren = null;
+      }
+    }, SIREN_FADE * 1000 + 100);
+  }
+
   function hit(points) {
     tone("square", 880, 880, 0.07, 0.06);
     tone("square", 1318.5, 1318.5, 0.1, 0.06, 0.06);
@@ -340,6 +408,13 @@ const Sfx = (() => {
   function blimpDown() {
     noise("bandpass", 2400, 260, 1.6, 0.25, 0, 2);
     tone("sawtooth", 320, 55, 1.6, 0.05);
+  }
+
+  // Flak shrapnel tearing into the plane, without bringing it down
+  function damage() {
+    noise("highpass", 3200, 1200, 0.18, 0.3, 0, 0.9);
+    tone("square", 240, 110, 0.12, 0.08);
+    tone("square", 180, 90, 0.1, 0.06, 0.07);
   }
 
   function planeHit() {
@@ -369,7 +444,7 @@ const Sfx = (() => {
 
   return {
     init, engineOn, setEngine, engineOff,
-    drop, boom, splash, flak, flakFire, hit, penalty, blimpDown, planeHit, start, end,
-    toggleMute, isMuted: () => muted,
+    drop, boom, splash, flak, flakFire, alarm, sirenOn, sirenOff, hit, penalty, blimpDown, damage, planeHit, start, end,
+    toggleMute, isMuted: () => muted, sirenPlaying: () => sirenWanted,
   };
 })();

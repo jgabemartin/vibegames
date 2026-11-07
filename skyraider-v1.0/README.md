@@ -27,9 +27,9 @@ Sound starts on your first key press, because browsers block audio until you int
 ### The run
 
 - Each run lasts 60 seconds. The map is new every run, in three parts:
-  1. **Farmland:** fields, villages, a river with a bridge, and supply depots.
+  1. **Farmland:** fields, villages, a river with a bridge, and supply depots. An air-raid siren wails as you fly over each village.
   2. **The front:** two lines of zig-zag trenches with barbed wire, shell-cratered no man's land and artillery behind the lines.
-  3. **Army camps:** fenced camps full of tents, trucks, guns and ammo dumps.
+  3. **Army camps:** fenced camps full of tents, trucks, guns and ammo dumps. An alarm sounds as each camp comes into view.
 - You get 2 planes. The run ends when time runs out or both planes are shot down.
 
 ### Dropping bombs
@@ -77,13 +77,17 @@ Sound starts on your first key press, because browsers block audio until you int
 - Barrage blimps float above the map, moored by cables to winches on the ground. They drift with the wind.
 - Anti-aircraft guns sit in sandbagged rings on the ground: a couple in the farmland, more at the front and in the camps. Their barrels swing to follow you, and they fire while you're coming toward them.
 - Blimp gunners and AA guns fire flak shells. You can see each shell fly toward you, with a smoke trail and a glowing fuse, and it bursts where it stops. Ground shells grow as they climb. Steer away from where a shell is heading.
-- Flying into a blimp, or into a flak burst, costs a plane. Low down, the mooring cables are dangerous too.
+- A flak burst damages your plane. Each plane survives **1 hit**, and a second hit brings it down.
+- Flying into a blimp costs a plane straight away. Low down, the mooring cables do too.
 - Bomb a blimp's winch to bring it down in flames. Bomb an AA gun to silence it.
 - There are more blimps, and they fire faster, the further you get.
 
-### Losing a plane
+### Damage and losing a plane
 
-- Your plane spins down and crashes. The next one flies in from the bottom of the screen and blinks for a couple of seconds, while it can't be hit. The clock keeps running.
+- The two pips next to the plane icons at the top show your plane's condition: green when it's undamaged, and one red pip after a hit.
+- A damaged plane pours black smoke with sparks of fire, as a reminder that the next hit is fatal.
+- A hit makes the plane blink for a second, while it can't be hit again.
+- When a plane goes down, it spins and crashes. The next one flies in from the bottom of the screen and blinks for a couple of seconds, while it can't be hit. The clock keeps running.
 
 ### Tips
 
@@ -100,6 +104,8 @@ Sound starts on your first key press, because browsers block audio until you int
 - Biplane bombing run over farmland, the front and army camps, with a new map every run.
 - Bombs keep the plane's forward speed and drift with the wind. Altitude sets the fall time and a score multiplier of up to x2.
 - Targets: trenches, trucks (some moving), tents, guns, ammo dumps with chain explosions, the bridge and blimp winches. Houses cost points.
+- A plane survives one flak hit and goes down on the second, with a damage meter and a smoke trail once it's hit.
+- An alarm and a flashing "ENEMY BASE AHEAD!" warning as each army camp comes into view.
 - Barrage blimps with mooring cables and flak gunners, and anti-aircraft guns that track the plane. Flak shells are shown flying to their burst.
 - A bombsight shows where a bomb would land in still air.
 - Loads of 3 bombs that drop as fast as you press Space. The load refills 3 seconds after the last drop, shown in a BOMB box by the altitude gauge.
@@ -111,6 +117,8 @@ Sound starts on your first key press, because browsers block audio until you int
   - The whistle is timed to each fall.
   - The explosions are three blasts picked at random, at a slightly different pitch each time.
   - Each flak shot, from a blimp or an AA gun, is one of two gunshots picked at random.
+  - An alarm buzzes as each army camp comes into view.
+  - An air-raid siren starts as you near each village and fades out once it's behind you.
 - Other sound effects are made in code: flak, scoring chimes, bugle calls.
 
 ## Files
@@ -119,8 +127,8 @@ Sound starts on your first key press, because browsers block audio until you int
 - `game-v1.0.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
 - `sprites-v1.0.js`: the color palette, pixel-art sprites and the bitmap font
 - `sfx-v1.0.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready
-- `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`, `flak-fire-1.mp3`, `flak-fire-2.mp3`: the recorded sounds
-- `engine-v1.0.js`, `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`, `flak-fire-1-v1.0.js`, `flak-fire-2-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
+- `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`, `flak-fire-1.mp3`, `flak-fire-2.mp3`, `base-alarm.mp3`, `siren.mp3`: the recorded sounds
+- `engine-v1.0.js`, `bomb-whistle-v1.0.js`, `explosion-1-v1.0.js`, `explosion-2-v1.0.js`, `explosion-3-v1.0.js`, `flak-fire-1-v1.0.js`, `flak-fire-2-v1.0.js`, `base-alarm-v1.0.js`, `siren-v1.0.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
 - `style-v1.0.css`: page styling
 
 The folder and the `-v1.0` file names include the version number. For a new version:
@@ -141,6 +149,7 @@ Adding these to the end of the `index.html` address helps with testing. Players 
 - `?demo`: the plane flies and bombs on its own, and can't be shot down.
 - `&t=30`: start 30 seconds into the run.
 - `&seed=7`: use the same map every time.
+- `&hp=1`: each plane starts with only 1 hit left, to see the damage smoke.
 - `&sim=5`: play 5 seconds instantly before the first frame, and put the run's stats in the page title. Used for screenshots in a headless browser.
 
 For example: `index.html?demo&seed=7&t=30&sim=4`.

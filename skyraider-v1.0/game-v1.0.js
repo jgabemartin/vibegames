@@ -9,13 +9,15 @@
 
   // Hidden test flags: ?autostart skips the title, &t=30 jumps ahead in the run,
   // ?demo flies and bombs on its own, &seed=123 fixes the map,
-  // &sim=5 plays 5 seconds instantly before the first frame (for screenshots)
+  // &sim=5 plays 5 seconds instantly before the first frame (for screenshots),
+  // &hp=1 starts each plane with only 1 hit left (to see the damage smoke)
   const params = new URLSearchParams(location.search);
   const DEMO = params.has("demo");
   const AUTOSTART = params.has("autostart") || DEMO;
   const JUMP_T = Math.max(0, Math.min(55, parseFloat(params.get("t")) || 0));
   const SEED = params.has("seed") ? parseInt(params.get("seed"), 10) : null;
   const SIM = Math.max(0, Math.min(70, parseFloat(params.get("sim")) || 0));
+  const START_HP = parseInt(params.get("hp"), 10) || 99; // capped at PLANE_HITS when a plane is made
 
   // ---- Tuning (units: pixels and seconds) ----
   const RUN_TIME = 60;
@@ -25,6 +27,8 @@
   const STRIP_H = TRAVEL + H + TAIL;
   const PLANE_Y = 300;
   const PLANES_PER_RUN = 2;
+  const PLANE_HITS = 2; // flak hits a plane takes before it goes down
+  const HIT_IMMUNE = 1; // seconds a plane can't be hit again after a flak hit
   const STEER_ACCEL = 380;
   const STEER_MAX = 90;
   const STEER_DRAG = 4;
@@ -48,6 +52,8 @@
   const BLIMP_SHELL_T = 0.6; // flak shell flight time from a blimp
   const GROUND_SHELL_T = 0.85; // and from an AA gun on the ground
   const CRASH_T = 1.3;
+  const SIREN_AHEAD = 40; // the siren starts when a village is this close ahead of the plane (about 1 s)
+  const VILLAGE_HALF = 52; // how far a village's houses spread from its center
   const PLANE_BONUS = 200;
   const BEST_KEY = "skyRaiderBest";
 
@@ -141,6 +147,7 @@
   let planeBonus = 0;
   let newBest = false;
   let soundMsgT = 0;
+  let baseAlertT = 0; // counts down while "ENEMY BASE AHEAD!" flashes
   let jumpUsed = false;
   let best = 0;
   try {
@@ -172,6 +179,8 @@
       g,
       targets: [],
       blimps: [],
+      camps: [], // fenced army camps, to sound the alarm as each comes into view
+      villages: [], // village centers, for the air-raid siren
       flags: [],
       blocked: [],
       roadX: (d) => Math.round(128 + 48 * Math.sin(d / 240 + ph[0]) + 16 * Math.sin(d / 85 + ph[1])),
@@ -371,6 +380,7 @@
     const g = w.g;
     const centers = [ri(240, 300), ri(520, 600), ri(780, 860)];
     centers.forEach((dv, vi) => {
+      w.villages.push({ y: STRIP_H - dv });
       pixCircle(g, w.roadX(dv), STRIP_H - dv, 18, "#9c8a62");
       if (vi === 1) {
         for (let tries = 0; tries < 60; tries++) {
@@ -429,6 +439,7 @@
         g.fillRect(x0, y, 1, 1);
         g.fillRect(x0 + cw - 1, y, 1, 1);
       }
+      w.camps.push({ top: y0, bottom: y0 + ch, alarmed: false });
       const fx = Math.round(x0 + cw / 2);
       const fy = Math.round(y0 + ch / 2);
       w.flags.push({ x: fx, y: fy });
@@ -663,6 +674,7 @@
       spin: 0,
       crashed: false,
       smokeT: 0,
+      hp: clamp(START_HP, 1, PLANE_HITS),
     };
   }
 
@@ -676,6 +688,7 @@
     flak = [];
     particles = [];
     popups = [];
+    baseAlertT = 0;
     chains = [];
     bombsLeft = BOMB_LOAD;
     reload = 0;
@@ -699,6 +712,7 @@
     if (state === "over") return;
     state = "over";
     overT = 0;
+    Sfx.sirenOff();
     timeUp = isTimeUp;
     planeBonus = planesLeft * PLANE_BONUS;
     score += planeBonus;
@@ -718,6 +732,7 @@
   function pause() {
     state = "paused";
     Sfx.engineOff();
+    Sfx.sirenOff();
   }
 
   function resume() {
@@ -774,6 +789,7 @@
       updateDying(p, dt);
       return;
     }
+    damageSmoke(p, dt);
     if (p.entering) {
       p.y += (PLANE_Y - p.y) * Math.min(1, dt * 3);
       if (Math.abs(p.y - PLANE_Y) < 0.5) {
@@ -855,6 +871,33 @@
     }
   }
 
+  // A damaged plane trails grey smoke, and black smoke with sparks of fire on its last hit
+  function damageSmoke(p, dt) {
+    if (p.hp >= PLANE_HITS) return;
+    p.smokeT -= dt;
+    if (p.smokeT > 0) return;
+    const bad = p.hp <= 1;
+    p.smokeT = bad ? 0.05 : 0.11;
+    const side = Math.random() < 0.5 ? -4 : 4;
+    smoke(p.x + side + rr(-1, 1), toStrip(p.y) + 2, bad ? 2 : 1.5, bad ? 1.4 : 1, 1, bad ? "#2e2c2a" : "#a8a8a0");
+    if (bad && Math.random() < 0.5) fire(p.x + side, toStrip(p.y) + 1, 1);
+  }
+
+  // A flak hit: costs one of the plane's hits, and the plane once they're all gone
+  function flakHit() {
+    if (DEMO) return;
+    plane.hp -= 1;
+    if (plane.hp <= 0) {
+      planeHit();
+      return;
+    }
+    plane.invuln = HIT_IMMUNE;
+    plane.smokeT = 0;
+    for (let i = 0; i < 4; i++) particles.push({ kind: "debris", x: plane.x, y: toStrip(plane.y), vx: rr(-40, 40), vy: rr(-40, 40), life: rr(0.3, 0.5), max: 0.5, layer: 1 });
+    Sfx.damage();
+  }
+
+  // The plane is destroyed
   function planeHit() {
     if (DEMO) return;
     plane.alive = false;
@@ -1026,6 +1069,25 @@
     }
   }
 
+  // An alarm sounds once as each army camp's fence comes onto the top of the screen
+  function updateCampAlarms() {
+    const vt = viewTop();
+    for (const c of world.camps) {
+      if (c.alarmed || c.bottom < vt || c.top > vt + H) continue;
+      c.alarmed = true;
+      Sfx.alarm();
+      baseAlertT = 3;
+    }
+  }
+
+  // The air-raid siren wails while the plane flies over a village, and fades once it's behind
+  function updateSiren() {
+    const vt = viewTop();
+    const near = world.villages.some((v) => v.y + VILLAGE_HALF - vt > PLANE_Y - SIREN_AHEAD && v.y - VILLAGE_HALF - vt < PLANE_Y);
+    if (near) Sfx.sirenOn();
+    else Sfx.sirenOff();
+  }
+
   // AA guns swing toward the plane and fire while it is ahead of them and in range
   function updateAAGuns(dt) {
     const vt = viewTop();
@@ -1090,7 +1152,7 @@
         const r = 3 + 5 * Math.min(1, a / 0.15);
         const dx = plane.x - f.x;
         const dy = plane.y - (f.y - vt);
-        if (dx * dx + dy * dy < (r + 3) ** 2) planeHit();
+        if (dx * dx + dy * dy < (r + 3) ** 2) flakHit();
       }
     }
     flak = flak.filter((f) => f.t < f.T + 0.6);
@@ -1214,6 +1276,7 @@
     animT += dt;
     if (soundMsgT > 0) soundMsgT -= dt;
     if (state === "paused") return;
+    if (baseAlertT > 0) baseAlertT -= dt;
     updateClouds(dt);
     updateWind(dt);
     if (state === "title") {
@@ -1234,6 +1297,10 @@
     if (state === "over") overT += dt;
     scroll = Math.min(scroll + SCROLL * dt, TRAVEL + TAIL - 4);
     updatePlane(dt);
+    if (state === "playing") {
+      updateCampAlarms();
+      updateSiren();
+    }
     updateBombs(dt);
     updateTrucks(dt);
     updateBlimps(dt);
@@ -1531,6 +1598,14 @@
     const blink = left <= 5 && left > 0 && Math.floor(animT * 4) % 2 === 0;
     S.text(ctx, tStr, W / 2, 3, blink ? "#e0503c" : left <= 10 ? "#f2d16b" : "#f2efe4", { align: "center" });
     for (let i = 0; i < planesLeft; i++) ctx.drawImage(S.planeIcon, W - 13 - i * 12, 3);
+    // Damage meter: a pip per hit the plane can still take, green at full strength, red on the last
+    if (plane.alive && state !== "over") {
+      const hpColor = plane.hp >= PLANE_HITS ? "#9fe07a" : plane.hp === 1 ? "#e0503c" : "#f2d16b";
+      for (let i = 0; i < PLANE_HITS; i++) {
+        ctx.fillStyle = i < plane.hp ? hpColor : "#3a3c46";
+        ctx.fillRect(W - 46 + i * 6, 4, 4, 5);
+      }
+    }
 
     // Wind
     ctx.fillStyle = "rgba(16,18,26,0.6)";
@@ -1678,6 +1753,9 @@
     if (state === "title") drawTitle();
     else {
       drawHud();
+      if (baseAlertT > 0 && state === "playing" && Math.floor(baseAlertT * 4) % 2 === 1) {
+        S.text(ctx, "ENEMY BASE AHEAD!", W / 2, 46, "#e0503c", { scale: 2, align: "center" });
+      }
       if (state === "paused") drawPaused();
       if (state === "over") drawOver();
     }
@@ -1706,7 +1784,7 @@
     for (let i = 0; i < SIM * 60; i++) update(1 / 60);
     const kinds = {};
     for (const t of world.targets) kinds[t.kind] = (kinds[t.kind] || "") + (t.alive ? "+" : "x");
-    if (stats) document.title = JSON.stringify({ score, time: +time.toFixed(1), planesLeft, ...stats, inAir: bombs.length, shells: flak.filter((f) => f.t < f.T).length, kinds });
+    if (stats) document.title = JSON.stringify({ score, time: +time.toFixed(1), planesLeft, hp: plane.hp, ...stats, inAir: bombs.length, shells: flak.filter((f) => f.t < f.T).length, alarms: world.camps.filter((c) => c.alarmed).length, siren: Sfx.sirenPlaying(), kinds });
   }
   requestAnimationFrame(frame);
 })();
