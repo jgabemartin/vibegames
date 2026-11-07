@@ -40,6 +40,7 @@ Each game folder has a README with feature sections, a `## Change log` (newest f
 ## 4. Commit
 
 - Stage the files explicitly by path (`git add <paths>`). Don't use `git add -A` unless you've checked every file.
+- Renamed or moved files may already be staged (`git mv` stages them). Before each commit, run `git diff --staged --stat` and check that exactly the intended files are staged. When splitting work into several commits, run each `git add` + `git commit` as its own step and stop if any `git add` fails, so one commit can't pick up another's files.
 - Message format, matching the history:
 
   ```
