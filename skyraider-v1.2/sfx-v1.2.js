@@ -1,7 +1,7 @@
 // SkyRaider sound effects, made with the Web Audio API. The engine, the bomb whistle, the
 // explosions, the flak guns firing and the camp alarm are recorded clips embedded as base64
-// (engine-v1.1.js, bomb-whistle-v1.1.js, explosion-1/2/3-v1.1.js, flak-fire-1/2-v1.1.js,
-// base-alarm-v1.1.js, siren-v1.1.js);
+// (engine-v1.2.js, bomb-whistle-v1.2.js, explosion-1/2/3-v1.2.js, flak-fire-1/2-v1.2.js,
+// base-alarm-v1.2.js, siren-v1.2.js);
 // everything else is made in code. Until the clips are decoded, coded versions play instead.
 const Sfx = (() => {
   const MUTE_KEY = "skyRaiderMuted";
@@ -19,7 +19,7 @@ const Sfx = (() => {
   let eng = null;
   let muted = false;
   let engineClip = null; // { buf, loopStart, loopEnd }: decoded engine.mp3 and its steady stretch
-  let engineLevel = { alt: 0.5, climb: 0 };
+  let engineLevel = { level: 0.5, push: 0 };
   let whistle = null; // { buf, end }: decoded bomb-whistle.mp3 and where its sound ends
   let blasts = []; // [{ buf, start }]: decoded explosion clips and where each one starts
   let lastBlast = -1;
@@ -199,7 +199,7 @@ const Sfx = (() => {
       g.gain.linearRampToValueAtTime(ENGINE_CLIP_VOL, t + 0.6);
       src.start(t, engineClip.loopStart);
       eng = { src, g, nodes: [src] };
-      setEngine(engineLevel.alt, engineLevel.climb);
+      setEngine(engineLevel.level, engineLevel.push);
       return;
     }
     const o1 = ctx.createOscillator();
@@ -234,15 +234,16 @@ const Sfx = (() => {
     eng = { o1, o2, lfo, g, nodes: [o1, o2, lfo] };
   }
 
-  function setEngine(alt, climb) {
-    engineLevel = { alt, climb };
+  // level: 0 to 1, how hard the plane is flying; push: the Up/Down input (1 forward, -1 back)
+  function setEngine(level, push) {
+    engineLevel = { level, push };
     if (!eng) return;
     if (eng.src) {
-      // Revs up as the plane climbs and higher up
-      eng.src.playbackRate.setTargetAtTime(0.9 + alt * 0.25 + climb * 0.08, ctx.currentTime, 0.25);
+      // Revs up as the plane speeds forward
+      eng.src.playbackRate.setTargetAtTime(0.9 + level * 0.25 + push * 0.08, ctx.currentTime, 0.25);
       return;
     }
-    const f = 56 + alt * 16 + climb * 8;
+    const f = 56 + level * 16 + push * 8;
     const t = ctx.currentTime;
     eng.o1.frequency.setTargetAtTime(f, t, 0.25);
     eng.o2.frequency.setTargetAtTime(f / 2, t, 0.25);
@@ -431,9 +432,46 @@ const Sfx = (() => {
     [783.99, 659.25, 523.25, 659.25, 1046.5].forEach((f, i) => tone("triangle", f, f, i === 4 ? 0.6 : 0.16, 0.12, i * 0.13));
   }
 
+  // Title music. It's too long to embed as base64, so it plays through an <audio> element,
+  // which works from file://. It starts on a key press, since browsers block sound until then.
+  const MUSIC_VOL = 0.5;
+  const MUSIC_FADE = 2.5; // seconds to fade out on take-off
+  let music = null;
+  let musicFade = null;
+
+  function musicOn() {
+    if (!music) {
+      music = new Audio("title-music.mp3");
+      music.loop = true;
+    }
+    clearInterval(musicFade);
+    musicFade = null;
+    music.volume = muted ? 0 : MUSIC_VOL;
+    const p = music.play();
+    if (p) p.catch(() => {}); // blocked: retried on the next key press
+  }
+
+  function musicOff(fade = MUSIC_FADE) {
+    if (!music || music.paused || musicFade) return;
+    const v0 = music.volume;
+    const t0 = performance.now();
+    musicFade = setInterval(() => {
+      const k = (performance.now() - t0) / (fade * 1000);
+      if (k < 1) {
+        music.volume = v0 * (1 - k);
+        return;
+      }
+      clearInterval(musicFade);
+      musicFade = null;
+      music.pause();
+      music.currentTime = 0;
+    }, 50);
+  }
+
   function toggleMute() {
     muted = !muted;
     if (master) master.gain.setValueAtTime(muted ? 0 : VOLUME, ctx.currentTime);
+    if (music && !musicFade) music.volume = muted ? 0 : MUSIC_VOL;
     try {
       localStorage.setItem(MUTE_KEY, muted ? "1" : "0");
     } catch (e) {
@@ -445,6 +483,7 @@ const Sfx = (() => {
   return {
     init, engineOn, setEngine, engineOff,
     drop, boom, splash, flak, flakFire, alarm, sirenOn, sirenOff, hit, penalty, blimpDown, damage, planeHit, start, end,
+    musicOn, musicOff,
     toggleMute, isMuted: () => muted, sirenPlaying: () => sirenWanted,
   };
 })();

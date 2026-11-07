@@ -1,5 +1,5 @@
 (() => {
-  const VERSION = "1.1"; // keep in step with the folder and file names and the README change log
+  const VERSION = "1.2"; // keep in step with the folder and file names and the README change log
 
   const canvas = document.getElementById("game");
   const ctx = canvas.getContext("2d");
@@ -25,23 +25,27 @@
   const TRAVEL = RUN_TIME * SCROLL;
   const TAIL = 150; // ground past the end, for the fly-off
   const STRIP_H = TRAVEL + H + TAIL;
-  const PLANE_Y = 300;
+  const PLANE_Y = 300; // where each plane starts on screen
+  const PLANE_Y_MIN = 110; // furthest forward the plane can fly
+  const PLANE_Y_MAX = 340; // and furthest back
   const PLANES_PER_RUN = 2;
   const PLANE_HITS = 2; // flak hits a plane takes before it goes down
   const HIT_IMMUNE = 1; // seconds a plane can't be hit again after a flak hit
   const STEER_ACCEL = 380;
   const STEER_MAX = 90;
   const STEER_DRAG = 4;
-  const CLIMB_RATE = 0.5; // altitude goes from 0 to 1
+  const FLY_ACCEL = 300; // Up/Down: flying forward and back up the screen
+  const FLY_MAX = 70;
+  const FLY_DRAG = 4;
+  const ALT = 0.5; // the plane's height, for its size and shadow: it no longer changes
   const WIND_MAX = 30;
   const WIND_PUSH = 0.15; // how much the wind nudges the plane
-  const BOMB_LOAD = 3; // bombs per load, dropped as fast as Space is pressed
+  const BOMB_LOAD = 5; // bombs per load, dropped as fast as Space is pressed
   const BOMB_RELOAD = 3; // seconds after the last drop until the load is full again
-  const FALL_MIN = 0.8; // fall time from the lowest altitude
-  const FALL_MAX = 2.0; // and from the highest
+  const FALL_T = 1.4; // seconds a bomb takes to reach the ground
   const BOMB_DRAG = 0.25; // bombs slowly lose the plane's forward speed
   const BOMB_SIDE_K = 1.3; // how fast a bomb picks up the wind
-  const BOMB_INHERIT = 0.5; // share of the plane's sideways speed a bomb keeps
+  const BOMB_INHERIT = 0.5; // share of the plane's sideways and forward-and-back speed a bomb keeps
   const BLAST_R = 9;
   const CHAIN_R = 24; // ammo dump secondary explosion
   const SHADOW_X = 9;
@@ -66,6 +70,16 @@
   const LINE2_D = 1570;
 
   const POINTS = { trench: 25, truck: 50, tent: 75, gun: 100, aa: 125, ammo: 150, bridge: 200, winch: 250, house: -100 };
+
+  // Award levels by final score: the highest rank whose minimum the score beats
+  const RANKS = [
+    { min: 3001, name: "SUPREME AIR MARSHAL", color: "#f2d16b" },
+    { min: 2001, name: "WING COMMANDER", color: "#f2d16b" },
+    { min: 1001, name: "SQUADRON LEADER", color: "#9fe07a" },
+    { min: 501, name: "COURAGEOUS CAPTAIN", color: "#9fe07a" },
+    { min: -Infinity, name: "MERITORIOUS AIRMAN", color: "#f2efe4" },
+  ];
+  const rankFor = (s) => RANKS.find((r) => s >= r.min);
 
   // ---- Helpers ----
   function mulberry32(a) {
@@ -123,6 +137,7 @@
 
   // ---- State ----
   let state = "title"; // title | playing | paused | over
+  let showOrders = false; // title screen: false shows the game's name, true the mission orders
   let world = null;
   let animT = 0;
   let time = 0;
@@ -133,6 +148,7 @@
   let bombs = [];
   let flak = [];
   let particles = [];
+  let fires = []; // bomb craters still burning
   let popups = [];
   let chains = [];
   let wind = 0;
@@ -161,8 +177,8 @@
   const viewTop = () => STRIP_H - H - scroll;
   const toStrip = (screenY) => screenY + viewTop();
   const heightOf = (alt) => 0.35 + 0.65 * alt;
-  const multOf = (alt) => Math.round((1 + alt) * 10) / 10;
-  const fallTime = (alt) => FALL_MIN + (FALL_MAX - FALL_MIN) * alt;
+  // A bomb's forward speed over the ground: the scroll, plus part of the plane's own speed up the screen
+  const bombFwd = (p) => SCROLL - p.vy * BOMB_INHERIT;
 
   // ============================================================
   // World generation: the whole map is painted once per run onto a tall strip
@@ -661,11 +677,10 @@
       x: W / 2,
       y: first ? PLANE_Y : H + 24,
       vx: 0,
-      alt: 0.5,
-      climb: 0,
+      vy: 0,
+      alt: ALT,
       bank: 0,
       pitch: 0,
-      pitchT: 0, // smoothed climb input, so a tap doesn't flick the pose
       prop: 0,
       alive: true,
       entering: !first,
@@ -679,7 +694,8 @@
   }
 
   function startRun() {
-    world = buildWorld(SEED !== null ? SEED : (Math.random() * 1e9) | 0);
+    Sfx.musicOff();
+    world =buildWorld(SEED !== null ? SEED : (Math.random() * 1e9) | 0);
     time = 0;
     scroll = 0;
     score = 0;
@@ -687,6 +703,7 @@
     bombs = [];
     flak = [];
     particles = [];
+    fires = [];
     popups = [];
     baseAlertT = 0;
     chains = [];
@@ -750,15 +767,21 @@
     keys[e.code] = true;
     Sfx.init();
     if (e.repeat) return;
-    if (e.code === "KeyM") {
+    if (e.code === "Enter" || e.code === "NumpadEnter") {
+      if (state === "title" && !showOrders) {
+        // The key press lets the browser start the music
+        showOrders = true;
+        Sfx.musicOn();
+      } else if (state === "title") startRun(); // mission accepted
+      else if (state === "over" && overT > 1.6) startRun();
+    } else if (e.code === "KeyM") {
       Sfx.toggleMute();
       soundMsgT = 1.2;
     } else if (e.code === "KeyP") {
       if (state === "playing") pause();
       else if (state === "paused") resume();
     } else if (e.code === "Space") {
-      if (state === "title") startRun();
-      else if (state === "over" && overT > 1.6) startRun();
+      if (state === "over" && overT > 1.6) startRun();
       else if (state === "playing") dropRequested = true;
       else if (state === "paused") resume();
     }
@@ -807,11 +830,11 @@
     }
 
     let dir = (held("ArrowRight", "KeyD") ? 1 : 0) - (held("ArrowLeft", "KeyA") ? 1 : 0);
-    // Flown like a stick: Down pulls back to climb, Up pushes forward to dive
-    let climb = (held("ArrowDown", "KeyS") ? 1 : 0) - (held("ArrowUp", "KeyW") ? 1 : 0);
+    // Up flies forward (up the screen), Down drops back
+    let fwd = (held("ArrowUp", "KeyW") ? 1 : 0) - (held("ArrowDown", "KeyS") ? 1 : 0);
     if (DEMO) {
       dir = Math.sin(animT * 0.9) > 0 ? 1 : -1;
-      climb = Math.sin(animT * 0.4) > 0 ? 1 : -1;
+      fwd = Math.sin(animT * 0.4) > 0 ? 1 : -1;
       if (bombsLeft > 0 && Math.random() < dt * 2) dropRequested = true;
     }
     if (dir) p.vx += dir * STEER_ACCEL * dt;
@@ -825,15 +848,24 @@
       p.x = W - 14;
       p.vx = Math.min(0, p.vx);
     }
-    p.climb = climb;
-    p.alt = clamp01(p.alt + climb * CLIMB_RATE * dt);
-    // Pose: bank by sideways speed, and pitch while the altitude is actually changing
+    if (!p.entering) {
+      if (fwd) p.vy -= fwd * FLY_ACCEL * dt;
+      else p.vy -= p.vy * Math.min(1, FLY_DRAG * dt);
+      p.vy = clamp(p.vy, -FLY_MAX, FLY_MAX);
+      p.y += p.vy * dt;
+      if (p.y < PLANE_Y_MIN) {
+        p.y = PLANE_Y_MIN;
+        p.vy = Math.max(0, p.vy);
+      } else if (p.y > PLANE_Y_MAX) {
+        p.y = PLANE_Y_MAX;
+        p.vy = Math.min(0, p.vy);
+      }
+    }
+    // Pose: bank by sideways speed; nose down speeding forward, nose up dropping back
     const speed = Math.abs(p.vx);
     p.bank = Math.sign(p.vx) * (speed > 60 ? 2 : speed > 22 ? 1 : 0);
-    const pitching = (climb > 0 && p.alt < 1) || (climb < 0 && p.alt > 0) ? climb : 0;
-    p.pitchT += (pitching - p.pitchT) * Math.min(1, dt * 8);
-    p.pitch = p.pitchT > 0.5 ? 1 : p.pitchT < -0.5 ? -1 : 0;
-    Sfx.setEngine(p.alt, climb);
+    p.pitch = p.vy < -25 ? -1 : p.vy > 25 ? 1 : 0;
+    Sfx.setEngine(0.5 - (p.vy / FLY_MAX) * 0.4, fwd);
 
     if (dropRequested) {
       dropRequested = false;
@@ -920,35 +952,22 @@
         planeHit();
         return;
       }
-      // The mooring cable only matters down low
-      if (p.alt < 0.4 && b.falling === 0 && segDist(p.x, p.y, b.x, b.y + 8 - vt, b.wx, b.wy - vt) < 4) {
-        planeHit();
-        return;
-      }
     }
-  }
-
-  function segDist(px, py, ax, ay, bx, by) {
-    const vx = bx - ax;
-    const vy = by - ay;
-    const len2 = vx * vx + vy * vy || 1;
-    const t = clamp01(((px - ax) * vx + (py - ay) * vy) / len2);
-    return Math.hypot(px - (ax + vx * t), py - (ay + vy * t));
   }
 
   // ============================================================
   // Bombs
   // ============================================================
   function dropBomb() {
-    const T = fallTime(plane.alt);
+    const T = FALL_T;
     bombs.push({
       x: plane.x,
       y: toStrip(plane.y) - 4,
       vx: plane.vx * BOMB_INHERIT + wind * WIND_PUSH,
+      fwd: bombFwd(plane),
       t: 0,
       T,
       h0: heightOf(plane.alt),
-      mult: multOf(plane.alt),
     });
     bombsLeft -= 1;
     reload = BOMB_RELOAD; // every drop restarts the reload
@@ -960,12 +979,12 @@
     for (const b of bombs) {
       b.t += dt;
       // Forward speed fades from the plane's speed, so the bomb falls back a little
-      b.y -= SCROLL * Math.exp(-BOMB_DRAG * b.t) * dt;
+      b.y -= b.fwd * Math.exp(-BOMB_DRAG * b.t) * dt;
       b.vx += (wind - b.vx) * BOMB_SIDE_K * dt;
       b.x += b.vx * dt;
       if (b.t >= b.T) {
         b.done = true;
-        if (impact(b.x, b.y, b.mult, BLAST_R, false)) stats.bombHits++;
+        if (impact(b.x, b.y, 1, BLAST_R, false)) stats.bombHits++;
       }
     }
     bombs = bombs.filter((b) => !b.done);
@@ -993,8 +1012,9 @@
       splash(x, y);
       Sfx.splash();
     } else {
-      boom(x, y, isChain ? 14 : 8, 0);
-      bakeCrater(x, y, isChain ? 8 : 4 + Math.floor(Math.random() * 3));
+      boom(x, y, isChain ? 22 : 14, 0);
+      bakeCrater(x, y, isChain ? 9 : 5 + Math.floor(Math.random() * 3));
+      addFire(x, y, isChain ? 12 : rr(7, 10), isChain ? 6 : 4);
       Sfx.boom(big);
     }
     if (gained > 0) Sfx.hit(gained);
@@ -1058,7 +1078,7 @@
 
       // Gunners fire at the plane while it is in range
       const sy = b.y - vt;
-      if (state === "playing" && b.falling === 0 && plane.alive && !plane.entering && sy > 4 && sy < PLANE_Y + 20) {
+      if (state === "playing" && b.falling === 0 && plane.alive && !plane.entering && sy > 4 && sy < plane.y + 20) {
         b.cd -= dt;
         if (b.cd <= 0) {
           b.cd = b.band === 0 ? rr(2.4, 3.6) : b.band === 1 ? rr(2.0, 3.2) : rr(1.7, 2.8);
@@ -1083,7 +1103,7 @@
   // The air-raid siren wails while the plane flies over a village, and fades once it's behind
   function updateSiren() {
     const vt = viewTop();
-    const near = world.villages.some((v) => v.y + VILLAGE_HALF - vt > PLANE_Y - SIREN_AHEAD && v.y - VILLAGE_HALF - vt < PLANE_Y);
+    const near = world.villages.some((v) => v.y + VILLAGE_HALF - vt > plane.y - SIREN_AHEAD && v.y - VILLAGE_HALF - vt < plane.y);
     if (near) Sfx.sirenOn();
     else Sfx.sirenOff();
   }
@@ -1101,7 +1121,7 @@
       turn = Math.atan2(Math.sin(turn), Math.cos(turn));
       t.aim += clamp(turn, -3 * dt, 3 * dt);
       if (state !== "playing" || !plane.alive || plane.entering) continue;
-      if (sy < 10 || sy > PLANE_Y - 40 || Math.abs(plane.x - t.x) > 110) continue;
+      if (sy < 10 || sy > plane.y - 40 || Math.abs(plane.x - t.x) > 110) continue;
       t.cd -= dt;
       if (t.cd <= 0 && Math.abs(turn) < 0.3) {
         t.cd = rr(2.8, 4.2);
@@ -1188,11 +1208,35 @@
   }
 
   function boom(x, y, r, layer) {
-    particles.push({ kind: "boom", x, y, vx: 0, vy: 0, r, life: 0.45, max: 0.45, layer });
-    for (let i = 0; i < 8; i++) {
-      particles.push({ kind: "debris", x, y, vx: rr(-45, 45), vy: rr(-45, 45), life: rr(0.3, 0.6), max: 0.6, layer });
+    // Smoke first, so the fireball draws on top of it
+    for (let i = 0; i < 5; i++) smoke(x + rr(-r / 3, r / 3), y + rr(-r / 3, r / 3), r * 0.45, 2.2, layer, "#4a4642");
+    particles.push({ kind: "boom", x, y, vx: 0, vy: 0, r, life: 0.6, max: 0.6, layer });
+    particles.push({ kind: "ring", x, y, vx: 0, vy: 0, r, life: 0.3, max: 0.3, layer });
+    for (let i = 0; i < Math.round(r * 1.2); i++) {
+      const a = rr(0, Math.PI * 2);
+      const v = rr(20, r * 6);
+      particles.push({ kind: "debris", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: rr(0.3, 0.8), max: 0.8, layer });
     }
-    for (let i = 0; i < 3; i++) smoke(x + rr(-3, 3), y + rr(-3, 3), r * 0.4, 1.6, layer, "#5a5650");
+  }
+
+  // A bomb crater keeps burning and smoking for a while after the blast
+  function addFire(x, y, life, size) {
+    fires.push({ x, y, life, max: life, size, emit: 0 });
+    if (fires.length > 40) fires.shift();
+  }
+
+  function updateFires(dt) {
+    const vt = viewTop();
+    for (const f of fires) {
+      f.life -= dt;
+      f.emit -= dt;
+      if (f.emit > 0 || f.y < vt - 40 || f.y > vt + H + 40) continue;
+      const k = f.life / f.max;
+      f.emit = 0.08 + (1 - k) * 0.15; // dies down as it burns out
+      fire(f.x + rr(-f.size, f.size), f.y + rr(-f.size / 2, f.size / 2), 0);
+      if (Math.random() < 0.5) smoke(f.x + rr(-2, 2), f.y - 2, 2 + f.size * 0.5 * k, 2.6, 0, k > 0.4 ? "#2e2c2a" : "#5a5650");
+    }
+    fires = fires.filter((f) => f.life > 0);
   }
 
   function splash(x, y) {
@@ -1218,6 +1262,7 @@
       }
     }
     particles = particles.filter((p) => p.life > 0);
+    updateFires(dt);
 
     for (const t of world.targets) {
       if (t.y < vt - 30 || t.y > vt + H + 30) continue;
@@ -1346,8 +1391,8 @@
   function drawBombSight() {
     const p = plane;
     if (state !== "playing" || !p.alive || p.entering) return;
-    const T = fallTime(p.alt);
-    const ahead = (SCROLL * (1 - Math.exp(-BOMB_DRAG * T))) / BOMB_DRAG;
+    const T = FALL_T;
+    const ahead = (bombFwd(p) * (1 - Math.exp(-BOMB_DRAG * T))) / BOMB_DRAG;
     const side = (p.vx * BOMB_INHERIT * (1 - Math.exp(-BOMB_SIDE_K * T))) / BOMB_SIDE_K;
     const x = Math.round(p.x + side);
     const y = Math.round(p.y - 4 - ahead);
@@ -1385,6 +1430,21 @@
     }
   }
 
+  // Flickering flames in the burning craters
+  function drawFires(vt) {
+    for (const f of fires) {
+      const y = Math.round(f.y - vt);
+      if (y < -20 || y > H + 20) continue;
+      const k = f.life / f.max;
+      const n = Math.ceil(f.size * 4 * Math.min(1, k * 1.5));
+      for (let i = 0; i < n; i++) {
+        const big = Math.random() < k;
+        ctx.fillStyle = pick(["#f2d16b", "#e08a3a", "#e08a3a", "#c0443a"]);
+        ctx.fillRect(Math.round(f.x + rr(-f.size, f.size)), Math.round(y + rr(-f.size * 1.4, f.size * 0.4)), big ? 2 : 1, big ? 2 : 1);
+      }
+    }
+  }
+
   function drawParticles(vt, layer) {
     for (const p of particles) {
       if (p.layer !== layer) continue;
@@ -1406,6 +1466,16 @@
           pixCircle(ctx, x, y, r, "#7c2a20");
           pixCircle(ctx, x, y, r * 0.5, "#e08a3a");
         }
+      } else if (p.kind === "ring") {
+        // The shock wave: a pale ring racing out from the blast
+        const ringR = p.r * (1 + (1 - k) * 1.2);
+        ctx.globalAlpha = k * 0.8;
+        ctx.fillStyle = "#f2efe4";
+        for (let i = 0; i < 24; i++) {
+          const a = (i / 24) * Math.PI * 2;
+          ctx.fillRect(Math.round(x + Math.cos(a) * ringR), Math.round(y + Math.sin(a) * ringR), 1, 1);
+        }
+        ctx.globalAlpha = 1;
       } else if (p.kind === "smoke") {
         ctx.globalAlpha = Math.min(0.75, k * 0.9);
         pixCircle(ctx, x, y, p.r, p.color);
@@ -1613,38 +1683,22 @@
     S.text(ctx, "WIND", W - 24, 18, "#c9c6b8", { align: "center" });
     drawWindArrow(W - 24, 31);
 
-    // Altitude gauge with the score multiplier and the bomb-ready light
-    const gx = W - 12;
-    const gy = 282;
-    const gh = 70;
+    // Bomb load, in the bottom-right corner: one icon per bomb left, and a bar that fills while reloading
+    const bw = BOMB_LOAD * 8 + 2;
+    const bx = W - 4 - bw;
+    const by = H - 38;
     ctx.fillStyle = "rgba(16,18,26,0.6)";
-    ctx.fillRect(gx - 14, gy - 13, 24, gh + 26);
-    S.text(ctx, "ALT", gx - 2, gy - 10, "#c9c6b8", { align: "center" });
-    ctx.fillStyle = "#2a2c36";
-    ctx.fillRect(gx - 2, gy, 4, gh);
-    const ah = Math.round(plane.alt * gh);
-    ctx.fillStyle = "#6fa0d8";
-    ctx.fillRect(gx - 2, gy + gh - ah, 4, ah);
-    ctx.fillStyle = "#c9c6b8";
-    for (let i = 0; i <= 4; i++) ctx.fillRect(gx + 3, gy + Math.round((i * gh) / 4), 2, 1);
-    ctx.fillStyle = "#f2d16b";
-    ctx.fillRect(gx - 4, gy + gh - ah - 1, 8, 2);
-    S.text(ctx, "X" + multOf(plane.alt).toFixed(1), gx - 2, gy + gh + 4, "#f2d16b", { align: "center" });
-    // Bomb load, in a box beside the gauge: one icon per bomb left, and a bar that fills while reloading
-    const bx = gx - 42;
-    const by = gy + gh - 21;
-    ctx.fillStyle = "rgba(16,18,26,0.6)";
-    ctx.fillRect(bx, by, 26, 34);
-    S.text(ctx, "BOMB", bx + 13, by + 3, bombsLeft ? "#c9c6b8" : "#e0503c", { align: "center" });
+    ctx.fillRect(bx, by, bw, 34);
+    S.text(ctx, "BOMBS", bx + bw / 2, by + 3, bombsLeft ? "#c9c6b8" : "#e0503c", { align: "center" });
     for (let i = 0; i < BOMB_LOAD; i++) {
       ctx.globalAlpha = i < bombsLeft ? 1 : 0.25;
       ctx.drawImage(S.bombL, bx + 2 + i * 8, by + 12, 6, 14);
     }
     ctx.globalAlpha = 1;
     if (bombsLeft < BOMB_LOAD) {
-      const fill = Math.round(22 * (1 - reload / BOMB_RELOAD));
+      const fill = Math.round((bw - 4) * (1 - reload / BOMB_RELOAD));
       ctx.fillStyle = "#2a2c36";
-      ctx.fillRect(bx + 2, by + 29, 22, 2);
+      ctx.fillRect(bx + 2, by + 29, bw - 4, 2);
       ctx.fillStyle = "#f2d16b";
       ctx.fillRect(bx + 2, by + 29, fill, 2);
     }
@@ -1666,33 +1720,84 @@
     ctx.fillRect(x + w - 1, y, 1, h);
   }
 
+  // The title screen announces the game, then Enter brings up the mission orders
   function drawTitle() {
-    panel(14, 40, W - 28, 236);
-    S.text(ctx, "SKYRAIDER", W / 2, 52, "#f2d16b", { scale: 3, align: "center" });
-    S.text(ctx, "V" + VERSION + "  -  WWI BOMBING RUN", W / 2, 80, "#c9c6b8", { align: "center" });
-    const lines = [
+    if (showOrders) drawOrders();
+    else drawSplash();
+  }
+
+  function drawSplash() {
+    ctx.fillStyle = "rgba(16,18,26,0.6)";
+    ctx.fillRect(0, 70, W, 150);
+    ctx.fillStyle = "#a8975f";
+    ctx.fillRect(0, 70, W, 1);
+    ctx.fillRect(0, 219, W, 1);
+    S.text(ctx, "THE WESTERN FRONT, 1917", W / 2, 84, "#c9c6b8", { align: "center" });
+    S.text(ctx, "SKYRAIDER", W / 2, 102, "#f2d16b", { scale: 4, align: "center" });
+    S.text(ctx, "WWI BOMBING RUN", W / 2, 140, "#f2efe4", { scale: 2, align: "center" });
+    S.text(ctx, "V" + VERSION, W / 2, 160, "#c9c6b8", { align: "center" });
+    if (Math.floor(animT * 2) % 2 === 0) S.text(ctx, "PRESS ENTER", W / 2, 180, "#ffffff", { scale: 2, align: "center" });
+    S.text(ctx, "FOR YOUR MISSION", W / 2, 200, "#f2efe4", { align: "center" });
+    if (best > 0) S.text(ctx, "BEST " + best, W - 4, H - 10, "#f2d16b", { align: "right" });
+  }
+
+  // The mission orders on a sheet of paper, under the logo
+  function drawOrders() {
+    S.text(ctx, "SKYRAIDER", W / 2, 18, "#f2d16b", { scale: 3, align: "center" });
+    S.text(ctx, "V" + VERSION + "  -  WWI BOMBING RUN", W / 2, 43, "#f2efe4", { align: "center" });
+
+    const x = 16, y = 58, w = W - 32, h = 242;
+    const INK = "#2b2418", FADED = "#5e5039", RED = "#a8322a";
+    ctx.fillStyle = "rgba(16,18,26,0.45)";
+    ctx.fillRect(x + 3, y + 3, w, h);
+    ctx.fillStyle = "#e9dfbf";
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = "#d3c393";
+    ctx.fillRect(x, y + h - 2, w, 2);
+    ctx.fillRect(x + w - 2, y, 2, h);
+    const rule = (ry) => {
+      ctx.fillStyle = "#b9a874";
+      ctx.fillRect(x + 10, ry, w - 20, 1);
+    };
+    const ink = (str, ty, color = INK, opts = {}) => S.text(ctx, str, W / 2, ty, color, { align: "center", shadow: false, ...opts });
+
+    // "TOP SECRET" stamp
+    const sw = S.textWidth("TOP SECRET") + 10;
+    ctx.fillStyle = RED;
+    ctx.fillRect(W / 2 - sw / 2, 65, sw, 1);
+    ctx.fillRect(W / 2 - sw / 2, 77, sw, 1);
+    ctx.fillRect(W / 2 - sw / 2, 65, 1, 13);
+    ctx.fillRect(W / 2 + sw / 2 - 1, 65, 1, 13);
+    ink("TOP SECRET", 68, RED);
+
+    ink("YOUR MISSION", 85, RED, { scale: 2 });
+    ink("INFLICT MAXIMUM DAMAGE TO", 106);
+    ink("ENEMY FORCES WHILE MINIMIZING", 116);
+    ink("HARM TO NON-MILITARY TARGETS.", 126);
+    rule(138);
+    [
+      "BOMB TRENCHES, GUNS, TRUCKS, TENTS,",
+      "AMMO DUMPS, AA GUNS AND THE BRIDGE.",
+      "SPARE THE VILLAGES: -100 A HOUSE.",
+      "BOMBS DRIFT IN THE WIND.",
+      "60 SECONDS, 2 PLANES.",
+    ].forEach((r, i) => ink(r, 144 + i * 10, FADED));
+    rule(196);
+    [
       ["LEFT/RIGHT", "STEER"],
-      ["DOWN/UP", "CLIMB / DIVE"],
+      ["UP/DOWN", "FORWARD / BACK"],
       ["SPACE", "DROP A BOMB"],
       ["P", "PAUSE"],
       ["M", "SOUND ON/OFF"],
-    ];
-    lines.forEach(([k, v], i) => {
-      S.text(ctx, k, 30, 100 + i * 11, "#f2d16b");
-      S.text(ctx, v, 104, 100 + i * 11, "#f2efe4");
+    ].forEach(([k, v], i) => {
+      S.text(ctx, k, x + 22, 202 + i * 10, RED, { shadow: false });
+      S.text(ctx, v, x + 98, 202 + i * 10, INK, { shadow: false });
     });
-    const rules = [
-      "BOMB TRENCHES, GUNS, TRUCKS,",
-      "TENTS, AMMO DUMPS AND THE BRIDGE.",
-      "SPARE THE VILLAGES: -100 A HOUSE.",
-      "HIGH DROPS SCORE UP TO X2 BUT",
-      "DRIFT FURTHER IN THE WIND.",
-      "DODGE FLAK FROM BLIMPS AND AA GUNS.",
-      "60 SECONDS, 2 PLANES.",
-    ];
-    rules.forEach((r, i) => S.text(ctx, r, W / 2, 162 + i * 11, "#c9c6b8", { align: "center" }));
-    if (best > 0) S.text(ctx, "BEST " + best, W / 2, 244, "#f2d16b", { align: "center" });
-    if (Math.floor(animT * 2) % 2 === 0) S.text(ctx, "PRESS SPACE TO TAKE OFF", W / 2, 258, "#ffffff", { align: "center" });
+    rule(254);
+    ink("IF YOU ACCEPT THIS MISSION,", 262);
+    if (Math.floor(animT * 2) % 2 === 0) ink("PRESS ENTER", 276, RED, { scale: 2 });
+
+    if (best > 0) S.text(ctx, "BEST " + best, W - 4, H - 10, "#f2d16b", { align: "right" });
   }
 
   function drawPaused() {
@@ -1720,8 +1825,11 @@
     });
     S.text(ctx, "SCORE", W / 2, 186, "#c9c6b8", { align: "center" });
     S.text(ctx, String(score), W / 2, 198, "#f2d16b", { scale: 3, align: "center" });
-    S.text(ctx, newBest ? "NEW BEST!" : "BEST " + best, W / 2, 228, newBest ? "#9fe07a" : "#c9c6b8", { align: "center" });
-    if (overT > 1.6 && Math.floor(animT * 2) % 2 === 0) S.text(ctx, "SPACE TO FLY AGAIN", W / 2, 258, "#ffffff", { align: "center" });
+    S.text(ctx, newBest ? "NEW BEST!" : "BEST " + best, W / 2, 226, newBest ? "#9fe07a" : "#c9c6b8", { align: "center" });
+    const rank = rankFor(score);
+    S.text(ctx, "AWARDED THE RANK OF", W / 2, 238, "#c9c6b8", { align: "center" });
+    S.text(ctx, rank.name, W / 2, 248, rank.color, { align: "center" });
+    if (overT > 1.6 && Math.floor(animT * 2) % 2 === 0) S.text(ctx, "SPACE TO FLY AGAIN", W / 2, 264, "#ffffff", { align: "center" });
   }
 
   function draw() {
@@ -1731,10 +1839,11 @@
     drawTargets(vt);
     drawAAGuns(vt);
     drawFlags(vt);
+    drawFires(vt);
     drawParticles(vt, 0);
     drawClouds(true);
     if (state === "title") {
-      const demoPlane = { x: W / 2, y: PLANE_Y + 30, alt: 0.6, bank: 0, prop: animT * 30, alive: true, invuln: 0, crashed: false };
+      const demoPlane = { x: W / 2, y: PLANE_Y + 30, alt: ALT, bank: 0, prop: animT * 30, alive: true, invuln: 0, crashed: false };
       drawShadows(vt);
       drawPlaneShadow(demoPlane);
       drawBlimps(vt);

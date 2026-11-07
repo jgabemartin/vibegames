@@ -1,6 +1,6 @@
-# SkyRaider v1.1
+# SkyRaider v1.2
 
-A World War I bombing run with 16-bit-style pixel art. Fly a biplane up the screen over farmland, the front-line trenches and army camps, and drop bombs on military targets. Where a bomb lands depends on where you are, when you let go, how high you fly and which way the wind is blowing. You have 60 seconds and 2 planes per run.
+A World War I bombing run with 16-bit-style pixel art. Fly a biplane up the screen over farmland, the front-line trenches and army camps, and drop bombs on military targets. Where a bomb lands depends on where you are, when you let go, how fast you're flying and which way the wind is blowing. You have 60 seconds and 2 planes per run.
 
 ## How to play
 
@@ -8,17 +8,18 @@ You don't need to install anything. The game is plain HTML, CSS and JavaScript, 
 
 1. Download [vibegames-main.zip](https://github.com/jgabemartin/vibegames/archive/refs/heads/main.zip), or click the green **Code** button on the repo page, then **Download ZIP**.
 2. Unzip it.
-3. Open the `skyraider-v1.1` folder and double-click `index.html`.
+3. Open the `skyraider-v1.2` folder and double-click `index.html`.
 
-Sound starts on your first key press, because browsers block audio until you interact with the page.
+The game opens on a title screen. Press Enter to see your mission orders, and a march starts playing. Press Enter again to accept the mission and take off.
 
 ### Controls
 
 | Key | Action |
 |---|---|
 | Left / Right (or A / D) | Steer |
-| Down / Up (or S / W) | Climb / dive, like a flight stick: pull back to climb, push forward to dive |
-| Space | Drop a bomb (start the game, fly again) |
+| Up / Down (or W / S) | Fly forward up the screen, or drop back |
+| Enter | See your mission, then accept it and take off (or fly again) |
+| Space | Drop a bomb (or fly again) |
 | P | Pause (the game also pauses when the window loses focus) |
 | M | Sound on or off (remembered) |
 
@@ -35,24 +36,26 @@ Sound starts on your first key press, because browsers block audio until you int
 ### Dropping bombs
 
 - Bombs fall straight down from the plane, but they keep most of the plane's forward speed. **Drop before the target reaches you.** The bomb lands close to where the plane is when it hits the ground, slightly behind.
-- The **bombsight**, a set of corner marks on the ground ahead of the plane, shows roughly where a bomb dropped right now would land in still air. It moves with your altitude and steering, but it **ignores the wind**, so aim upwind of the target to allow for drift. It dims while you're out of bombs.
+- Every bomb takes 1.4 seconds to land.
+- If you're flying forward when you let go, the bomb carries further ahead. If you're dropping back, it lands shorter.
+- The **bombsight**, a set of corner marks on the ground ahead of the plane, shows roughly where a bomb dropped right now would land in still air. It moves as you speed up, drop back and steer, but it **ignores the wind**, so aim upwind of the target to allow for drift. It dims while you're out of bombs.
 - The falling bomb's shadow shows where it's heading. Bomb and shadow meet where it lands.
-- You carry **3 bombs** at a time and can drop them as fast as you can press Space.
-- **3 seconds** after your last drop, you're back to a full load of 3. If you still have bombs left, you can keep dropping, but each drop starts the 3 seconds again. If you're out, you have to wait. There's no limit on reloads.
-- The **BOMB** box beside the altitude gauge shows how many bombs you have left, and a bar fills up as the reload counts down. The label turns red when you're out.
+- You carry **5 bombs** at a time and can drop them as fast as you can press Space.
+- **3 seconds** after your last drop, you're back to a full load of 5. If you still have bombs left, you can keep dropping, but each drop starts the 3 seconds again. If you're out, you have to wait. There's no limit on reloads.
+- The **BOMBS** box in the bottom-right corner shows how many bombs you have left, and a bar fills up as the reload counts down. The label turns red when you're out.
 - If you're steering when you let go, the bomb keeps half of your sideways speed.
 
 ### Wind
 
 - The wind blows left or right. Its strength shifts during the run. The **WIND** box shows the direction and strength, and chimney smoke and camp flags lean with it.
-- Bombs drift with the wind as they fall. The longer the fall, the further they drift.
+- Bombs drift with the wind as they fall.
 - The wind also pushes your plane and the blimps a little.
 
-### Altitude and points
+### Flying forward and back
 
-- Down climbs and Up dives, and the **ALT** gauge shows your altitude. The plane's shadow moves further away the higher you fly.
-- From low down a bomb takes 0.8 seconds to land. From the top it takes 2 seconds, so it drifts much further in the wind.
-- Higher drops score more: points are multiplied by **x1.0** at the lowest altitude, up to **x2.0** at the highest. The gauge shows the current multiplier.
+- Up flies the plane forward, up the screen, as far as about a third of the way down from the top. Down drops it back toward the bottom.
+- The plane tips its nose down as it speeds forward and up as it drops back, and the engine revs up when you push forward.
+- Flying forward gets you to targets sooner and shows you less of what's coming. Dropping back gives you more warning of flak and blimps.
 
 ### Targets
 
@@ -68,9 +71,18 @@ Sound starts on your first key press, because browsers block audio until you int
 | Blimp winch (brings its blimp down) | 250 |
 | **Village house or church** | **-100** |
 
-- Target points are multiplied by the altitude multiplier at the moment you dropped the bomb. House penalties are not.
 - Each plane still flying at the end of the 60 seconds is worth **+200**.
 - Your best score is saved in your browser.
+
+At the end of each run you're awarded a rank for your score:
+
+| Score | Rank |
+|---|---|
+| Up to 500 | Meritorious Airman |
+| 501 to 1000 | Courageous Captain |
+| 1001 to 2000 | Squadron Leader |
+| 2001 to 3000 | Wing Commander |
+| 3001 or more | Supreme Air Marshal |
 
 ### Blimps, AA guns and flak
 
@@ -78,7 +90,7 @@ Sound starts on your first key press, because browsers block audio until you int
 - Anti-aircraft guns sit in sandbagged rings on the ground: a couple in the farmland, more at the front and in the camps. Their barrels swing to follow you, and they fire while you're coming toward them.
 - Blimp gunners and AA guns fire flak shells. You can see each shell fly toward you, with a smoke trail and a glowing fuse, and it bursts where it stops. Ground shells grow as they climb. Steer away from where a shell is heading.
 - A flak burst damages your plane. Each plane survives **1 hit**, and a second hit brings it down.
-- Flying into a blimp costs a plane straight away. Low down, the mooring cables do too.
+- Flying into a blimp costs a plane straight away. You fly above the mooring cables, so they're safe.
 - Bomb a blimp's winch to bring it down in flames. Bomb an AA gun to silence it.
 - There are more blimps, and they fire faster, the further you get.
 
@@ -91,13 +103,22 @@ Sound starts on your first key press, because browsers block audio until you int
 
 ### Tips
 
-- Fly high over targets in the open, where drift is easy to judge, and low when the wind is strong or houses are close by.
 - Keep steady for a moment before you drop, so the bomb doesn't fly off sideways.
-- Three quick drops make a stick of bombs along your path, good for a row of tents or a line of trucks. Then you have 3 seconds with no bombs, so don't waste them.
+- Quick drops make a stick of bombs along your path, good for a row of tents or a line of trucks. Fly forward while you drop to spread them out. Once all 5 are gone you have 3 seconds with no bombs, so don't waste them.
 - A moving truck needs a lead: drop ahead of where it's going.
 - Ammo dumps sit among other targets, so one good hit can score several times over.
 
 ## Change log
+
+### 1.2: Forward and back flying, mission orders and bigger blasts
+
+- No more altitude. Up and Down now fly the plane forward and back on the screen. A bomb's forward speed comes partly from yours, and every bomb takes the same time to fall. The altitude gauge and score multiplier are gone.
+- Bomb loads go up from 3 to 5, shown in a BOMBS box in the bottom-right corner.
+- Blimp mooring cables are no longer a hazard.
+- A new title screen. Press Enter to see your mission orders on a "TOP SECRET" sheet, then Enter again to accept the mission.
+- A march starts with the mission orders and fades out as you take off.
+- A rank at the end of each run, from Meritorious Airman up to Supreme Air Marshal, based on your score.
+- Bigger bomb blasts, with a shock wave ring, more flying debris and a larger crater. Each crater keeps burning and smoking for several seconds afterwards.
 
 ### 1.1: Bomb loads, plane damage, alarms and more recorded sounds
 
@@ -123,14 +144,15 @@ Sound starts on your first key press, because browsers block audio until you int
 ## Files
 
 - `index.html`: page layout
-- `game-v1.1.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
-- `sprites-v1.1.js`: the color palette, pixel-art sprites and the bitmap font
-- `sfx-v1.1.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready
+- `game-v1.2.js`: map generation, flying, bombs and the bombsight, blimps, AA guns and flak, scoring, screens and drawing
+- `sprites-v1.2.js`: the color palette, pixel-art sprites and the bitmap font
+- `sfx-v1.2.js`: sound effects, made with the Web Audio API. Plays the recorded clips below, or coded stand-ins until they're ready. Also plays the title music
+- `title-music.mp3`: the march on the title card. It's too long to embed, so it plays from the file through an `<audio>` element, which works from disk
 - `engine.mp3`, `bomb-whistle.mp3`, `explosion-1.mp3`, `explosion-2.mp3`, `explosion-3.mp3`, `flak-fire-1.mp3`, `flak-fire-2.mp3`, `base-alarm.mp3`, `siren.mp3`: the recorded sounds
-- `engine-v1.1.js`, `bomb-whistle-v1.1.js`, `explosion-1-v1.1.js`, `explosion-2-v1.1.js`, `explosion-3-v1.1.js`, `flak-fire-1-v1.1.js`, `flak-fire-2-v1.1.js`, `base-alarm-v1.1.js`, `siren-v1.1.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
-- `style-v1.1.css`: page styling
+- `engine-v1.2.js`, `bomb-whistle-v1.2.js`, `explosion-1-v1.2.js`, `explosion-2-v1.2.js`, `explosion-3-v1.2.js`, `flak-fire-1-v1.2.js`, `flak-fire-2-v1.2.js`, `base-alarm-v1.2.js`, `siren-v1.2.js`: the same sounds embedded as base64, so they play when `index.html` is opened straight from disk
+- `style-v1.2.css`: page styling
 
-The folder and the `-v1.1` file names include the version number. For a new version:
+The folder and the `-v1.2` file names include the version number. For a new version:
 
 - Rename the folder and those files.
 - Update `VERSION` at the top of the game file.
